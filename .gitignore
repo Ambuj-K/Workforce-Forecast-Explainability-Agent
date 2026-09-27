@@ -1,0 +1,18 @@
+# Environment
+.env
+.venv/
+__pycache__/
+*.pyc
+
+# Data (generated or downloaded, never committed)
+data/
+*.parquet
+*.duckdb
+
+# Eval outputs
+eval_results*.json
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
