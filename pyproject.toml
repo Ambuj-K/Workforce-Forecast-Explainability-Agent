@@ -4,7 +4,11 @@ version = "0.0.1"
 description = "Explains retail labour-demand forecasts to workforce planners, with verified numbers."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "numpy>=2.4.6",
+    "pandas>=3.0.6",
+    "pyarrow>=25.0.1",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -12,3 +16,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/wfx"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

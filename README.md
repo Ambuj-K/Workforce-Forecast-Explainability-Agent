@@ -21,13 +21,20 @@ synthetic retail data → walk-forward forecast (GBM + SHAP) → explainability 
 ```
 
 ## Roadmap
-- [ ] Synthetic data generator with injected caveats
+- [x] Synthetic data generator with injected caveats
 - [ ] Forecast pipeline + walk-forward back-test + seasonal-naive baseline
 - [ ] Explainability extract + invariants
 - [ ] Evidence tools + agent graph + faithfulness gate
 - [ ] Evals: deterministic, structural, judge; golden cases incl. misuse and injection
 - [ ] Monitoring over time, security doc, deployment
 - [ ] Graph-vs-flat retrieval experiment over the store hierarchy
+
+## Quick start
+```bash
+uv sync
+uv run python scripts/generate_data.py --out data/raw   # synthetic dataset (parquet)
+uv run pytest -q
+```
 
 ## Licence
 MIT (see `LICENSE`)

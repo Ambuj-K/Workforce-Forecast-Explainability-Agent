@@ -35,3 +35,11 @@ Each decision records the context, the options, the choice and what would make u
 ## ADR-006 — LangGraph with routing in code
 **Decision:** Question classification → deterministic routing → evidence tools → registry → explanation → gate.
 **Why:** Workflows written in prompts drift; routing in code is testable and traceable.
+
+## ADR-007 — Keep the truth next to the corrupted data
+**Context:** Evals need to know which rows are wrong and what the right values were.
+**Options:** corrupt in place and discard the truth · keep a list of corrupted keys only · keep full clean volumes + a caveats registry.
+**Decision:** Keep full `true_volumes` plus a `caveats` table (type, store, driver, dates, affected rows, detail). Injected problems never overlap on a store-day.
+**Why:** Forecast error can be measured against clean truth, and the agent's caveat disclosure can be scored deterministically (did it mention caveat C00n for this scope?). Non-overlap keeps each check independent.
+**Revisit if:** realistic overlapping failures (e.g. a gap inside a late feed) become a test goal.
+

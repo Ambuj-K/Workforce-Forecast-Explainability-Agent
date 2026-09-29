@@ -5,7 +5,7 @@ __pycache__/
 *.pyc
 
 # Data (generated or downloaded, never committed)
-data/
+/data/
 *.parquet
 *.duckdb
 
