@@ -72,3 +72,16 @@ By lead week: 6.8% → 6.8% → 7.2% → 7.3% (baseline 11.1% → 12.9%). The mo
 **Guard:** a test asserts `base + Σ contributions == forecast` (tolerance 1e-6) for every forecast row.
 **Lesson:** Explanations need their own invariant tests. A popular library produced confident, wrong attributions; only the arithmetic check caught it. This is exactly the failure the agent's faithfulness gate is designed for.
 
+### Iteration 3.4 — Hours conversion, explained exactly (2026-10-01)
+**Built:** `forecasting/hours.py`. Weekly hours per store × department = Σ(volume × minutes per unit ÷ 60) + fixed hours per week (prorated by trading days, so openings and closures get partial weeks). Because hours are linear in volume, per-feature volume contributions convert into **exact per-feature hour contributions** (additivity error ~1e-13).
+**Example (store S001, grocery, week of 10 Nov 2025):** 270.9 h = 15.0 fixed + 255.9 variable; variable = 171.1 base + 35.9 promotion + 22.4 store + 18.5 recent level + 8.5 calendar + 0.4 seasonal history − 0.8 holiday − 0.1 price.
+**Weekly hours accuracy (variable hours, 22 origins):**
+| Department | WAPE model | WAPE baseline | Skill |
+|---|---|---|---|
+| checkouts | 2.4% | 4.9% | +50% |
+| fresh | 4.7% | 12.2% | +61% |
+| grocery | 3.3% | 8.0% | +55% |
+| online | 4.4% | 7.2% | +38% |
+| receiving | 4.6% | 7.8% | +40% |
+**Lesson:** Choose the output unit the user acts on (hours per week) and keep the explanation exact all the way into it. Weekly errors are about half the daily ones because day-to-day noise cancels.
+

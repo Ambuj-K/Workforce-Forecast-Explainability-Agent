@@ -65,3 +65,8 @@ Each decision records the context, the options, the choice and what would make u
 - **Native categorical splits silently broke SHAP:** contributions stopped adding up to the forecast (max error 1,641 units) and inflated one group about 9×. With integer encoding the error is 0.0. A test now asserts `base + Σ contributions == forecast` for every forecast row.
 **Revisit if:** accuracy needs native categoricals, in which case switch to a library with native exact contributions and keep the same invariant test.
 
+## ADR-011 — Hours are a linear function of volume
+**Decision:** hours = Σ volume × minutes per unit ÷ 60 + fixed weekly hours prorated by trading days. Hours accuracy is scored on variable hours only.
+**Why:** Linearity makes every volume contribution convert exactly into hours, so "the promotion adds 35.9 hours" is verifiable arithmetic, not an estimate. Fixed hours are identical in forecast, baseline and truth, so including them would only dilute the error that planners feel.
+**Revisit if:** labour standards become non-linear (e.g. minimum crew sizes, step functions).
+

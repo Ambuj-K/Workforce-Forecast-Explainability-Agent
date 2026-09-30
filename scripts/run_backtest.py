@@ -11,6 +11,7 @@ from wfx.data.config import GeneratorConfig
 from wfx.data.synthetic import generate
 from wfx.forecasting.backtest import BacktestConfig, accuracy, walk_forward
 from wfx.forecasting.features import build_features
+from wfx.forecasting.hours import hours_accuracy
 from wfx.forecasting.prepare import prepare_observations
 
 
@@ -32,6 +33,11 @@ def main() -> None:
         name = "accuracy_by_" + "_".join(by)
         table.to_csv(args.out / f"{name}.csv", index=False)
         print(f"\n{name}\n{table.round(3).to_string(index=False)}")
+
+    hours = hours_accuracy(forecasts, ds.labour_standards)
+    hours.to_csv(args.out / "hours_accuracy_by_department_lead_week.csv", index=False)
+    summary = hours.groupby("department", as_index=False)[["wape_model", "wape_baseline", "skill"]].mean()
+    print(f"\nweekly_hours_accuracy_by_department\n{summary.round(3).to_string(index=False)}")
 
 
 if __name__ == "__main__":

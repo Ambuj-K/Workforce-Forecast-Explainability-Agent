@@ -23,7 +23,7 @@ synthetic retail data → walk-forward forecast (GBM + SHAP) → explainability 
 ## Roadmap
 - [x] Synthetic data generator with injected caveats
 - [x] Forecast pipeline: data preparation, features, gradient boosting per driver with exact contributions, walk-forward back-test vs seasonal-naive baseline (34–46% lower error)
-- [ ] Hours conversion (labour standards, fixed vs variable)
+- [x] Hours conversion with exact hour contributions (weekly hours 38–61% more accurate than seasonal naive)
 - [ ] Explainability extract + invariants
 - [ ] Evidence tools + agent graph + faithfulness gate
 - [ ] Evals: deterministic, structural, judge; golden cases incl. misuse and injection
