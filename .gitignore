@@ -16,3 +16,6 @@ eval_results*.json
 .DS_Store
 .vscode/
 .idea/
+
+# Back-test outputs
+/reports/

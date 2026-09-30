@@ -55,3 +55,13 @@ Each decision records the context, the options, the choice and what would make u
 **Why:** Measured against the answer key (see evolution log 2.2): 59/60 recall, 0 false positives across 10 seeds. The single miss falls inside a ramp-up window that is already disclosed.
 **Revisit if:** new caveat types (e.g. level shifts) are added to the generator.
 
+## ADR-010 — scikit-learn gradient boosting + SHAP, raw units, numeric encoding
+**Context:** ADR-002 chose gradient boosting + SHAP. The implementation needs exact per-row contributions, native missing-value handling and no system dependencies.
+**Options:** LightGBM/XGBoost (native exact contributions, but need the OpenMP system library on macOS) · scikit-learn `HistGradientBoostingRegressor` + the `shap` tree explainer.
+**Decision:** scikit-learn + `shap`. The target is **raw volume, not log volume**. Day of week, holiday and region are passed as **plain integers, not native categoricals**.
+**Why:**
+- Pure Python install (simpler Docker deploy); native NaN handling; measured additivity error 0.0.
+- Raw units make each contribution read as "N units" to a planner (log space would make them multiplicative and unreadable).
+- **Native categorical splits silently broke SHAP:** contributions stopped adding up to the forecast (max error 1,641 units) and inflated one group about 9×. With integer encoding the error is 0.0. A test now asserts `base + Σ contributions == forecast` for every forecast row.
+**Revisit if:** accuracy needs native categoricals, in which case switch to a library with native exact contributions and keep the same invariant test.
+

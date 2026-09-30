@@ -22,7 +22,8 @@ synthetic retail data → walk-forward forecast (GBM + SHAP) → explainability 
 
 ## Roadmap
 - [x] Synthetic data generator with injected caveats
-- [ ] Forecast pipeline + walk-forward back-test + seasonal-naive baseline *(data preparation + features done)*
+- [x] Forecast pipeline: data preparation, features, gradient boosting per driver with exact contributions, walk-forward back-test vs seasonal-naive baseline (34–46% lower error)
+- [ ] Hours conversion (labour standards, fixed vs variable)
 - [ ] Explainability extract + invariants
 - [ ] Evidence tools + agent graph + faithfulness gate
 - [ ] Evals: deterministic, structural, judge; golden cases incl. misuse and injection
@@ -33,6 +34,7 @@ synthetic retail data → walk-forward forecast (GBM + SHAP) → explainability 
 ```bash
 uv sync
 uv run python scripts/generate_data.py --out data/raw   # synthetic dataset (parquet)
+uv run python scripts/run_backtest.py --out reports      # walk-forward back-test (~7 min)
 uv run pytest -q
 ```
 

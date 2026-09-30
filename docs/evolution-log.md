@@ -46,3 +46,29 @@ Because the generator has an answer key, the detector was tuned against it acros
 **Built:** 18 features in 7 groups (calendar, holiday, promotion, price, store, recent level, seasonal history), each with a plain-English description. Past-volume features all end ≥ 28 days (the horizon) before the row's date; planned inputs are used as known in advance.
 **Proof:** a test tampers with every volume after a forecast origin and asserts that no history feature within the horizon changes, and that the tampering does reach rows beyond it (so the test can fail).
 
+---
+
+## Phase 3 — Models, Exact Contributions, Walk-Forward Back-Test (2026-09-30)
+
+### Iteration 3.1 — One model per driver + seasonal-naive baseline
+**Built:** `forecasting/model.py` (scikit-learn gradient boosting per driver; non-trading days forecast as 0 by rule; `explain()` returns per-row, per-feature contributions in volume units) and `forecasting/backtest.py` (22 Monday origins, 28 days apart, retrain at each; every forecast paired with a seasonal-naive baseline: the same weekday one horizon earlier).
+**Result (3 years, 12 stores, scored against ground truth, trading days):**
+| Driver | WAPE model | WAPE baseline | Skill |
+|---|---|---|---|
+| grocery cases | 7.1% | 13.1% | +46% |
+| online orders | 9.3% | 14.0% | +34% |
+| pallets received | 10.4% | 15.6% | +33% |
+| transactions | 5.8% | 9.5% | +39% |
+| fresh units | 9.5% | 17.4% | +45% |
+By lead week: 6.8% → 6.8% → 7.2% → 7.3% (baseline 11.1% → 12.9%). The model beats the baseline at every driver × lead-week combination.
+
+### Iteration 3.2 — The first origin crashed on a year-ago feature
+**Problem:** With a 364-day warm-up, `lag_364` had no values at all in the first training set, and the library failed with an unrelated-looking binning error.
+**Fix:** Warm-up raised to 455 days (a year + 13 weeks of last-year history); `train()` now names any feature with no history instead of surfacing a library error.
+
+### Iteration 3.3 — SHAP silently broke on categorical splits
+**Problem:** With day of week, holiday and region as native categorical features, the SHAP tree explainer returned contributions that did **not** add up to the forecast: max error **1,641 units**, and promotions looked ~9× more important than they were. No warning, no exception.
+**Fix:** Encode them as plain integers. Additivity error: **0.0**. Accuracy cost: ≤ 0.2 WAPE points on any driver.
+**Guard:** a test asserts `base + Σ contributions == forecast` (tolerance 1e-6) for every forecast row.
+**Lesson:** Explanations need their own invariant tests. A popular library produced confident, wrong attributions; only the arithmetic check caught it. This is exactly the failure the agent's faithfulness gate is designed for.
+
