@@ -22,7 +22,7 @@ synthetic retail data → walk-forward forecast (GBM + SHAP) → explainability 
 
 ## Roadmap
 - [x] Synthetic data generator with injected caveats
-- [ ] Forecast pipeline + walk-forward back-test + seasonal-naive baseline
+- [ ] Forecast pipeline + walk-forward back-test + seasonal-naive baseline *(data preparation + features done)*
 - [ ] Explainability extract + invariants
 - [ ] Evidence tools + agent graph + faithfulness gate
 - [ ] Evals: deterministic, structural, judge; golden cases incl. misuse and injection

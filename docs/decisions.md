@@ -43,3 +43,15 @@ Each decision records the context, the options, the choice and what would make u
 **Why:** Forecast error can be measured against clean truth, and the agent's caveat disclosure can be scored deterministically (did it mention caveat C00n for this scope?). Non-overlap keeps each check independent.
 **Revisit if:** realistic overlapping failures (e.g. a gap inside a late feed) become a test goal.
 
+## ADR-008 — One model per driver, past volume lagged by the full horizon
+**Context:** Forecasts are needed for every day up to 28 days ahead, and every feature must be explainable.
+**Options:** recursive forecasting (feed predictions back) · one model per horizon step · one model with all past-volume features lagged ≥ horizon.
+**Decision:** One model per driver; past-volume features end at least 28 days before the target date; planned inputs (calendar, promotions, prices, store facts) are known in advance. Horizon must be a multiple of 7 to keep weekday alignment.
+**Why:** No error compounding, one model to explain, and contributions stay tied to real observed inputs. The cost: short-term momentum inside the horizon is not used.
+**Revisit if:** accuracy at 1–7 days ahead lags a seasonal-naive baseline.
+
+## ADR-009 — Outlier detection with two baselines, and no judging during ramp-up
+**Decision:** A spike must exceed 4× the same-weekday median **and** 2× the recent 7-day median; a dropout is a zero on a trading day with a same-weekday baseline ≥ 10. Stores in their first 91 days are not judged.
+**Why:** Measured against the answer key (see evolution log 2.2): 59/60 recall, 0 false positives across 10 seeds. The single miss falls inside a ramp-up window that is already disclosed.
+**Revisit if:** new caveat types (e.g. level shifts) are added to the generator.
+
