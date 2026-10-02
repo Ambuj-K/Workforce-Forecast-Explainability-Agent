@@ -106,7 +106,7 @@ def _drop_duplicate_loads(volumes: pd.DataFrame) -> tuple[pd.DataFrame, list[dic
 
 def _trading_grid(ds: SyntheticDataset) -> pd.DataFrame:
     """Every day each store traded (inside the data range) x every driver."""
-    start, end = ds.calendar["date"].min(), ds.calendar["date"].max()
+    start, end = ds.calendar["date"].min(), ds.volumes["date"].max()  # calendar extends into the future
     drivers = ds.labour_standards[["department", "driver"]]
     parts = []
     for store in ds.stores.itertuples():

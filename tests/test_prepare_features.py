@@ -54,7 +54,7 @@ def issues(prepared, *types: str) -> pd.DataFrame:
 
 
 def test_grid_covers_every_trading_day_and_driver_once(ds, prepared):
-    start, end = ds.calendar["date"].min(), ds.calendar["date"].max()
+    start, end = ds.calendar["date"].min(), ds.volumes["date"].max()  # calendar runs into the future
     expected = 0
     for store in ds.stores.itertuples():
         first = max(start, store.open_date)

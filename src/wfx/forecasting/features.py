@@ -116,3 +116,35 @@ def _add_history(frame: pd.DataFrame, h: int) -> pd.DataFrame:
     frame["lag_364"] = series.shift(364)
     frame["lag_364_mean_7"] = pd.concat([series.shift(364 + k) for k in range(-3, 4)], axis=1).mean(axis=1, skipna=True)
     return frame
+
+
+def extend_into_future(prepared: pd.DataFrame, ds: SyntheticDataset, horizon_days: int = DEFAULT_HORIZON_DAYS) -> pd.DataFrame:
+    """Append rows for the ``horizon_days`` after the last reported day (target unknown).
+
+    Only stores still trading after the last reported day get future rows, and only up
+    to their closure date. Planned inputs for these rows come from the calendar,
+    promotions and prices, which run beyond the data.
+    """
+    last_day = ds.volumes["date"].max()
+    future_days = pd.date_range(last_day + pd.Timedelta(days=1), periods=horizon_days, freq="D")
+    if ds.calendar["date"].max() < future_days[-1]:
+        raise ValueError("planned inputs do not cover the forecast window; generate with forecast_days >= horizon")
+    drivers = ds.labour_standards[["department", "driver"]]
+    parts = []
+    for store in ds.stores.itertuples():
+        days = future_days[future_days >= store.open_date]
+        if pd.notna(store.close_date):
+            days = days[days < store.close_date]
+        if len(days):
+            parts.append(pd.DataFrame({"store_id": store.store_id, "date": days}).merge(drivers, how="cross"))
+    if not parts:
+        return prepared.copy()
+    future = pd.concat(parts, ignore_index=True)
+    future = future.merge(ds.calendar[["date", "is_trading_day"]], on="date", how="left")
+    future["is_missing"] = False
+    future["is_spike"] = False
+    future["is_dropout"] = False
+    future["reported_volume"] = np.nan
+    future["target"] = np.nan
+    out = pd.concat([prepared.assign(is_future=False), future.assign(is_future=True)], ignore_index=True)
+    return out.sort_values(["store_id", "driver", "date"], ignore_index=True)

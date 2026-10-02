@@ -151,7 +151,8 @@ def test_caveats_never_overlap_on_a_store_day(ds):
 def test_write_round_trips(ds, tmp_path):
     paths = ds.write(tmp_path)
     assert set(paths) == {
-        "calendar", "stores", "promotions", "prices", "true_volumes", "volumes", "labour_standards", "caveats"
+        "calendar", "stores", "promotions", "prices", "true_volumes", "volumes", "labour_standards", "caveats",
+        "future_true_volumes",
     }
     pd.testing.assert_frame_equal(pd.read_parquet(paths["volumes"]), ds.volumes, check_dtype=False)
 
@@ -166,3 +167,21 @@ def test_small_caveat_config_is_respected():
     )
     counts = small.caveats["caveat_type"].value_counts()
     assert (counts["gap"], counts["duplicate_load"], counts["outlier"]) == (1, 1, 2)
+
+
+def test_planned_inputs_extend_beyond_the_data_and_future_truth_is_separate(ds, config):
+    last_day = ds.true_volumes["date"].max()
+    assert ds.calendar["date"].max() == last_day + pd.Timedelta(days=config.forecast_days)
+    assert ds.promotions["date"].max() == ds.calendar["date"].max()
+    assert ds.volumes["date"].max() == last_day  # nothing reported from the future
+    future = ds.future_true_volumes
+    assert future["date"].min() == last_day + pd.Timedelta(days=1)
+    assert len(future) > 0 and not future.duplicated(KEYS).any()
+
+
+def test_future_inputs_do_not_change_history(config, ds):
+    without = generate(GeneratorConfig(start=config.start, end=config.end, n_stores=6, seed=11, forecast_days=0))
+    pd.testing.assert_frame_equal(ds.true_volumes, without.true_volumes)
+    pd.testing.assert_frame_equal(ds.volumes, without.volumes)
+    assert without.future_true_volumes.empty
+

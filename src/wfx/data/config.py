@@ -125,4 +125,5 @@ class GeneratorConfig:
     drivers: tuple[DriverSpec, ...] = DEFAULT_DRIVERS
     caveats: CaveatConfig = field(default_factory=CaveatConfig)
     standard_version: str = "LS-2024.1"
+    forecast_days: int = 28  # planned inputs (calendar, promotions, prices) known beyond the last data day
     seed: int = 7

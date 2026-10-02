@@ -85,3 +85,20 @@ By lead week: 6.8% → 6.8% → 7.2% → 7.3% (baseline 11.1% → 12.9%). The mo
 | receiving | 4.6% | 7.8% | +40% |
 **Lesson:** Choose the output unit the user acts on (hours per week) and keep the explanation exact all the way into it. Weekly errors are about half the daily ones because day-to-day noise cancels.
 
+---
+
+## Phase 4 — Explainability Extract and the Agent's Database (2026-10-02)
+
+### Iteration 4.1 — A live run needs planned future inputs
+**Problem:** Back-test runs alone can't show the caveats a planner meets *today*. The late-feed store only looks stale when the forecast is made the day after the data ends.
+**Fix:** The generator now extends the calendar, promotions and prices 28 days past the last data day (as planned inputs are known in reality) and keeps what then happens in a separate answer-key table. Future inputs use an independent random stream: **historical data is byte-identical** (checksums before/after match; a test asserts it).
+
+### Iteration 4.2 — The extract: one contract between pipeline and agent
+**Built:** `explain/extract.py`. An extract holds 5 past runs + 1 live run, each with forecasts, exact per-feature contributions (volume and weekly hours), eligibility flags (ramping, stale, missing / outlier / duplicate counts in the last 28 days, closures), quality issues and accuracy history, all **as of the run's origin, from reported data only**. Schemas (pandera) + invariants (forecast = base + contributions; closed days 0 with no contributions; hours add up; one live run; accuracy windows end before the live origin) are enforced at build, write **and** load.
+**Result:** the live run flags exactly one stale store (the injected late feed) and the injected grocery gap, with no access to the answer key (tests prove both).
+
+### Iteration 4.3 — Lock the SQL engine, not just the data
+**Built:** `explain/store.py`. The agent's DuckDB file is opened read-only with external access disabled and the configuration locked.
+**Tested attacks (all blocked, for the right reason):** CREATE/DELETE (read-only database) · `read_csv('…/secret.env')`, `FROM '…/secret.env'`, `COPY … TO`, `ATTACH`, `INSTALL` (permission errors: no external access) · `SET enable_external_access = true` (configuration locked).
+**Lesson:** If an LLM writes SQL, a read-only *data source* isn't enough: the engine itself can read files. Lock the engine at connection time and test the escapes.
+

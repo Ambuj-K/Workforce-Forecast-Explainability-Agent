@@ -5,6 +5,12 @@ prices that shaped them, labour standards to convert volume into hours, and a
 caveats table recording every data-quality problem injected into the reported
 volumes. The clean pre-injection volumes are kept as ``true_volumes`` so that
 forecast accuracy and caveat disclosure can both be evaluated against ground truth.
+
+Planned inputs (calendar, promotions, prices) extend ``forecast_days`` beyond the last
+data day, as they do in reality, so a live forecast can be made "today". The volumes
+that later happen in that window are kept separately in ``future_true_volumes`` (an
+answer key for scoring the live forecast). Future inputs use their own random stream,
+so the historical data is identical with or without them.
 """
 
 from __future__ import annotations
@@ -44,6 +50,7 @@ class SyntheticDataset:
     volumes: pd.DataFrame  # reported: true volumes with caveats injected
     labour_standards: pd.DataFrame
     caveats: pd.DataFrame
+    future_true_volumes: pd.DataFrame  # answer key for the live forecast window
 
     def write(self, out_dir: Path) -> dict[str, Path]:
         """Write every table as parquet under ``out_dir``; return the paths by table name."""
@@ -62,10 +69,11 @@ def generate(config: GeneratorConfig | None = None) -> SyntheticDataset:
     _validate(config)
     rng = np.random.default_rng(config.seed)
     dates = pd.date_range(config.start, config.end, freq="D")
+    future = pd.date_range(config.end + timedelta(days=1), periods=config.forecast_days, freq="D")
+    all_dates = dates.append(future)
     departments = _departments(config)
 
     holiday_mult, holiday_names = _holiday_multipliers(dates)
-    calendar = _build_calendar(dates, holiday_mult, holiday_names)
     stores = _build_stores(config, dates, rng)
     promo_on = _build_promotion_grid(config, dates, departments, rng)
     price_index = _build_price_grid(config, dates, departments, rng)
@@ -74,15 +82,26 @@ def generate(config: GeneratorConfig | None = None) -> SyntheticDataset:
     )
     volumes, caveats = _inject_caveats(config, true_volumes, stores, rng)
 
+    # Planned future inputs + what then happens, from an independent random stream.
+    future_rng = np.random.default_rng([config.seed, 1])
+    all_holiday_mult, all_holiday_names = _holiday_multipliers(all_dates)
+    all_promo_on = np.vstack([promo_on, _future_promotions(config, future, departments, future_rng)])
+    all_price_index = np.vstack([price_index, np.repeat(price_index[-1:], len(future), axis=0)])
+    simulated = _simulate_volumes(
+        config, all_dates, stores, departments, all_holiday_mult, all_promo_on, all_price_index, future_rng
+    )
+    future_true_volumes = simulated[simulated["date"] > dates[-1]].reset_index(drop=True)
+
     return SyntheticDataset(
-        calendar=calendar,
+        calendar=_build_calendar(all_dates, all_holiday_mult, all_holiday_names),
         stores=stores,
-        promotions=_to_long(dates, departments, promo_on, "on_promotion"),
-        prices=_to_long(dates, departments, price_index.round(4), "price_index"),
+        promotions=_to_long(all_dates, departments, all_promo_on, "on_promotion"),
+        prices=_to_long(all_dates, departments, all_price_index.round(4), "price_index"),
         true_volumes=true_volumes,
         volumes=volumes,
         labour_standards=_build_labour_standards(config),
         caveats=caveats,
+        future_true_volumes=future_true_volumes,
     )
 
 
@@ -241,6 +260,25 @@ def _build_price_grid(
             level *= 1 + rng.uniform(-0.06, 0.06)
             index[point:, j] = level
     return index
+
+
+def _future_promotions(
+    config: GeneratorConfig,
+    future: pd.DatetimeIndex,
+    departments: list[str],
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Planned promotions in the forecast window: about one week per department per ~6 weeks."""
+    on = np.zeros((len(future), len(departments)), dtype=bool)
+    week_starts = np.flatnonzero(future.dayofweek == 0)
+    if len(week_starts) == 0:
+        return on
+    chance = config.promo_weeks_per_year / 52
+    for j in range(len(departments)):
+        for start in week_starts:
+            if rng.random() < chance:
+                on[start : start + 7, j] = True
+    return on
 
 
 def _lead_multiplier(mult: np.ndarray, lead_days: int) -> np.ndarray:

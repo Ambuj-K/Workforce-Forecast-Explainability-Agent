@@ -70,3 +70,11 @@ Each decision records the context, the options, the choice and what would make u
 **Why:** Linearity makes every volume contribution convert exactly into hours, so "the promotion adds 35.9 hours" is verifiable arithmetic, not an estimate. Fixed hours are identical in forecast, baseline and truth, so including them would only dilute the error that planners feel.
 **Revisit if:** labour standards become non-linear (e.g. minimum crew sizes, step functions).
 
+## ADR-012 — Live run + as-of extract from reported data only
+**Decision:** Each extract has past runs (scorable) and one live run made the day after the last reported data, using planned future inputs. Every table is built as of its run's origin, from reported data; ground-truth tables are never read (tested by blanking them).
+**Why:** Planners ask about the next weeks, not the past; data-quality caveats (stale feeds, recent gaps) only appear as of "today". Answer keys stay usable for evaluation without leaking into what the agent sees.
+
+## ADR-013 — The agent's database is locked down at connection time
+**Decision:** DuckDB file built from the validated extract; the agent connects with `read_only=True`, `enable_external_access=false`, `lock_configuration=true`.
+**Why:** LLM-written SQL is untrusted input. Read-only stops writes; disabling external access stops file/network reads (secrets, other databases); locking stops the session from undoing either. Eight escape attempts are covered by tests.
+
