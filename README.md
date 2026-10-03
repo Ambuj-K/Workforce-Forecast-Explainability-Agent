@@ -25,7 +25,8 @@ synthetic retail data → walk-forward forecast (GBM + SHAP) → explainability 
 - [x] Forecast pipeline: data preparation, features, gradient boosting per driver with exact contributions, walk-forward back-test vs seasonal-naive baseline (34–46% lower error)
 - [x] Hours conversion with exact hour contributions (weekly hours 38–61% more accurate than seasonal naive)
 - [x] Explainability extract (past + live runs, as-of, contract enforced at write and load) + locked-down agent database
-- [ ] Evidence tools + agent graph + faithfulness gate
+- [x] Evidence tools (11, read-only, parameterised, uniform result with guards)
+- [ ] Agent graph + capability registry + faithfulness gate
 - [ ] Evals: deterministic, structural, judge; golden cases incl. misuse and injection
 - [ ] Monitoring over time, security doc, deployment
 - [ ] Graph-vs-flat retrieval experiment over the store hierarchy

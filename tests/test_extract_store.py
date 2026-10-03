@@ -23,7 +23,7 @@ def ds():
 
 @pytest.fixture(scope="module")
 def extract(ds):
-    return build_extract(ds, n_backtest_runs=2, params=FAST)
+    return build_extract(ds, recent_runs=2, scored_runs=2, params=FAST)
 
 
 @pytest.fixture(scope="module")
@@ -65,14 +65,21 @@ def test_extract_never_reads_ground_truth(ds, extract):
         caveats=ds.caveats.iloc[0:0],
         future_true_volumes=ds.future_true_volumes.iloc[0:0],
     )
-    again = build_extract(blind, n_backtest_runs=2, params=FAST)
+    again = build_extract(blind, recent_runs=2, scored_runs=2, params=FAST)
     for name in ("forecasts", "eligibility", "accuracy", "quality_issues"):
         pd.testing.assert_frame_equal(getattr(again, name), getattr(extract, name))
 
 
 def test_accuracy_is_as_of_the_live_run(extract, live):
     assert (extract.accuracy["window_end"] < live["origin"]).all()
-    assert set(extract.accuracy["scored_run_id"]) == set(extract.runs.loc[~extract.runs["is_live"], "run_id"])
+    played_out = extract.runs["origin"] + pd.Timedelta(days=27) < live["origin"]
+    assert set(extract.accuracy["scored_run_id"]) == set(extract.runs.loc[played_out, "run_id"])
+
+
+def test_recent_runs_overlap_the_live_window(extract, live):
+    weekly = extract.runs[(extract.runs["origin"] > live["origin"] - pd.Timedelta(days=28)) & ~extract.runs["is_live"]]
+    assert len(weekly) == 2
+    assert ((live["origin"] - weekly["origin"]).dt.days % 7 == 0).all()
 
 
 def test_live_eligibility_flags_the_late_feed_store(extract, ds, live):

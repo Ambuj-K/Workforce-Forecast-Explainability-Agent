@@ -1,7 +1,8 @@
 """Explainability extract: the only interface between the forecasting pipeline and the agent.
 
-One extract holds several forecast runs: past (back-test) runs, whose accuracy can be
-scored, and one live run made the day after the last reported data. Every table is
+One extract holds several forecast runs, all on Mondays: the live run made the day after
+the last reported data; recent weekly runs whose windows overlap it (for "what changed
+since the last run"); and older runs whose windows have fully played out (for accuracy). Every table is
 built "as of" its run's origin from reported data only; the ground-truth tables are
 never read. The contract (schemas + invariants) is enforced when the extract is built
 and again when it is loaded.
@@ -26,7 +27,7 @@ import pandas as pd
 import pandera.pandas as pa
 
 from wfx.data.synthetic import SyntheticDataset
-from wfx.forecasting.backtest import BacktestConfig, forecast_origins, seasonal_naive
+from wfx.forecasting.backtest import seasonal_naive
 from wfx.forecasting.features import (
     DEFAULT_HORIZON_DAYS,
     FEATURE_GROUPS,
@@ -90,20 +91,24 @@ class Extract:
 
 def build_extract(
     ds: SyntheticDataset,
-    n_backtest_runs: int = 5,
+    recent_runs: int = 3,
+    scored_runs: int = 4,
     horizon_days: int = DEFAULT_HORIZON_DAYS,
     params: ModelParams | None = None,
 ) -> Extract:
-    """Build and validate an extract with ``n_backtest_runs`` past runs plus one live run."""
+    """Build and validate an extract: the live run, ``recent_runs`` weekly runs before it and
+    ``scored_runs`` runs (one horizon apart) whose windows ended before the live run."""
     params = params or ModelParams()
     prepared = prepare_observations(ds)
     features = build_features(extend_into_future(prepared.frame, ds, horizon_days), ds, horizon_days)
     last_day = ds.volumes["date"].max()
     live_origin = last_day + pd.Timedelta(days=1)
 
-    history_dates = features.loc[~features["is_future"], "date"]
-    past = forecast_origins(history_dates, BacktestConfig(horizon_days=horizon_days, max_origins=n_backtest_runs))
-    origins = [o for o in past if o + pd.Timedelta(days=horizon_days) <= live_origin] + [live_origin]
+    if live_origin.dayofweek != 0:
+        raise ValueError("the live run must start on a Monday (data should end on a Sunday)")
+    recent = [live_origin - pd.Timedelta(days=7 * k) for k in range(recent_runs, 0, -1)]
+    scored = [live_origin - pd.Timedelta(days=horizon_days * k) for k in range(scored_runs, 0, -1)]
+    origins = sorted(set(recent) | set(scored) | {live_origin})
 
     parts: dict[str, list[pd.DataFrame]] = {name: [] for name in ("runs", "forecasts", "contributions", "weekly_hours", "weekly_hour_contributions", "eligibility")}
     for origin in origins:
@@ -243,9 +248,8 @@ def _accuracy(forecasts: pd.DataFrame, runs: pd.DataFrame, features: pd.DataFram
     )
     window_end = past.set_index("run_id")["origin"] + pd.Timedelta(days=int(past["horizon_days"].iloc[0]) - 1)
     table["window_end"] = table["run_id"].map(window_end)
-    table = table.rename(columns={"run_id": "scored_run_id"})
-    assert (table["window_end"] < live_origin).all()
-    return table
+    table = table[table["window_end"] < live_origin]  # only windows that have fully played out
+    return table.rename(columns={"run_id": "scored_run_id"}).reset_index(drop=True)
 
 
 # --------------------------------------------------------------------- contract

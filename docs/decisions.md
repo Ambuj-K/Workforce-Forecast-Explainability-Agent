@@ -78,3 +78,8 @@ Each decision records the context, the options, the choice and what would make u
 **Decision:** DuckDB file built from the validated extract; the agent connects with `read_only=True`, `enable_external_access=false`, `lock_configuration=true`.
 **Why:** LLM-written SQL is untrusted input. Read-only stops writes; disabling external access stops file/network reads (secrets, other databases); locking stops the session from undoing either. Eight escape attempts are covered by tests.
 
+## ADR-014 — Plain-Python evidence tools with a uniform result
+**Decision:** Tools are framework-free methods on `EvidenceTools` returning `ToolResult{status, data, notes, action, source}`; the agent framework wraps them later.
+**Why:** Testable without an LLM; one result shape keeps the agent's handling and the faithfulness gate simple; `source` makes every number traceable to a table. Parameterised SQL + strict name resolution make user text inert.
+**Revisit if:** a question type can't be answered by the fixed tools (then add a tool, not free-form SQL).
+

@@ -102,3 +102,24 @@ By lead week: 6.8% → 6.8% → 7.2% → 7.3% (baseline 11.1% → 12.9%). The mo
 **Tested attacks (all blocked, for the right reason):** CREATE/DELETE (read-only database) · `read_csv('…/secret.env')`, `FROM '…/secret.env'`, `COPY … TO`, `ATTACH`, `INSTALL` (permission errors: no external access) · `SET enable_external_access = true` (configuration locked).
 **Lesson:** If an LLM writes SQL, a read-only *data source* isn't enough: the engine itself can read files. Lock the engine at connection time and test the escapes.
 
+---
+
+## Phase 5 — Evidence Tools (2026-10-02)
+
+### Iteration 5.1 — Runs that overlap
+**Problem:** "What changed since the last run?" is the question planners ask most after a refresh, but runs spaced one horizon apart never cover the same week.
+**Fix:** The extract now holds the live run, **3 weekly runs before it** (overlapping its window, for change analysis) and **4 older runs** one horizon apart whose windows have fully played out (for accuracy).
+
+### Iteration 5.2 — Eleven read-only tools with one result shape
+**Built:** `explain/tools.py`: `list_runs`, `find_entities`, `get_provenance`, `explain_week_hours`, `explain_day_volume`, `get_hours_breakdown`, `compare_to_baseline`, `get_accuracy`, `get_caveats`, `compare_runs`, `describe_feature`. Every query is parameterised; every result is `{status, data, notes, action, source}`. Notes are generated from the data ("S002 cases_filled: data is stale; latest actuals 2025-12-23, 6 days before the run"), so every sentence the agent repeats traces to a number.
+**Guards:** user names resolved with a disclosed note ("Interpreted store 'store 1' as 'S001'"); ambiguous names → ask, never guess; unknown names, runs or weeks → `not_found` with the valid options and a next action; non-Monday dates → normalised with a note; non-trading days → explained as a rule, not by the model.
+**Exactness carried through:** tests assert day and week explanations add up to the forecast, hour breakdowns match weekly totals, and run-to-run group changes add up to the total change.
+
+### Iteration 5.3 — A junk name resolved to a real store
+**Problem:** The injection test passed `"S001' OR 1=1 --"`. The SQL was safe (parameterised), but the digit-based matcher **resolved the junk to S001**, silently answering a question nobody asked.
+**Fix:** Store names must be store-shaped (`S001`, `s1`, `store 1`, `1`); anything else is `not_found`.
+**Lesson:** Injection safety isn't only about SQL. A lenient resolver turns malformed input into a confident wrong answer.
+
+### Iteration 5.4 — An honest number the agent must not hide
+For store S002 transactions, the model is **worse than the seasonal-naive baseline at 1 week ahead** (6.0% vs 4.9% WAPE) and better at weeks 2–4. The accuracy tool reports it per lead week; the agent's prompt and evals must require it to be stated, not averaged away.
+
