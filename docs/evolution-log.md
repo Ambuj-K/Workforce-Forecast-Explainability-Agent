@@ -142,3 +142,18 @@ For store S002 transactions, the model is **worse than the seasonal-naive baseli
 ### Iteration 6.3 — Deterministic agent tests
 A scripted LLM replays prepared plans and drafts, so every route (answer, retry, fallback, clarify, guard, decline) is tested without network calls or cost. 107 tests in total.
 
+### Iteration 6.4 — First live run on Gemini (2026-10-04)
+Nine real questions, every route exercised; every written explanation passed the faithfulness gate on the first attempt.
+| Question | Outcome |
+|---|---|
+| Why does store 1 grocery need these hours next week? | Answered: "next week" resolved from the run date; every figure traced (217.8 h total; base 171.9, store +19.5, recent trend +13.3, calendar +7.1, promotion −6.7); "the model attributes" framing |
+| Can I trust the transactions forecast for store 2? | Answered: **stated the model was worse than the simple baseline one week ahead (6.0% vs 4.9%)**, better at weeks 2–4; disclosed stale data and 5 missing days |
+| Anything to be careful about this week? | Answered: the stale store across all five drivers + a 3-day grocery gap (both injected problems, found from reported data) |
+| What changed since last week's run? | Answered: −1.1 h total, by group, with the "newer run saw more recent data" note |
+| Should I cut two staff? / London weather? | Declined (staffing with an offer of evidence; off-topic) |
+| Store 1 *bakery*? / week of 2 February? | Guided replies listing valid departments / covered weeks |
+| Why are store 4 fresh hours up? | Asked which week |
+**Defect found:** the bakery reply leaked an internal tool instruction to the user ("Ask the user to pick one of the listed values").
+**Fix:** tool results now carry a separate user-facing `message`; `action` stays internal. A test asserts internal instructions never reach the user.
+**Lesson:** Results written for the agent and messages written for the user are different contracts; keep them in different fields.
+

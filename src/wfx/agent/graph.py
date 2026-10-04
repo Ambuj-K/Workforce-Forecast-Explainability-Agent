@@ -131,9 +131,10 @@ class ExplainabilityAgent:
     def _guarded(state: AgentState) -> AgentState:
         hit = next(e for e in state["evidence"] if e["primary"] and e["status"] in ("not_found", "ambiguous"))
         options = [", ".join(v if isinstance(v, str) else str(json_default(v)) for v in row.values()) for row in hit["data"][:12]]
-        text = hit["action"] or "I couldn't find that."
+        text = hit.get("message") or "I couldn't find that."  # user-facing; ``action`` is for the agent only
         if options:
-            text += " Options: " + "; ".join(options) + "."
+            lead = " " if text.endswith(":") else " Available: "
+            text += lead + "; ".join(options) + "."
         return {"answer": text, "outcome": "guarded"}
 
     def _explain(self, state: AgentState) -> AgentState:

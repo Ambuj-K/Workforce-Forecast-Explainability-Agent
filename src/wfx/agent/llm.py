@@ -59,6 +59,7 @@ class GeminiLLM:
             temperature=0,
             response_mime_type="application/json",
             response_schema=schema,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         )
         response = self._call(lambda: self._client.models.generate_content(model=self._model, contents=user, config=config))
         return schema.model_validate_json(response.text)
@@ -66,7 +67,11 @@ class GeminiLLM:
     def text(self, system: str, user: str) -> str:
         from google.genai import types
 
-        config = types.GenerateContentConfig(system_instruction=system, temperature=0)
+        config = types.GenerateContentConfig(
+            system_instruction=system,
+            temperature=0,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+        )
         response = self._call(lambda: self._client.models.generate_content(model=self._model, contents=user, config=config))
         return response.text or ""
 

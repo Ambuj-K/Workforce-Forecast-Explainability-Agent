@@ -84,6 +84,7 @@ def test_unknown_department_is_guided_without_calling_the_explainer(tools, week)
     result = ExplainabilityAgent(tools, llm).ask("Why does S001 bakery need these hours?")
     assert result.outcome == "guarded"
     assert "grocery" in result.answer and "bakery" in result.answer
+    assert "Ask the user" not in result.answer  # internal instructions never reach the user
 
 
 def test_staffing_decision_is_declined_with_an_offer(tools):

@@ -6,7 +6,8 @@ a ``ToolResult`` with the same shape:
 * ``status``: ok | not_found | ambiguous | partial
 * ``data``: rows straight from the database (numbers are never computed by the LLM)
 * ``notes``: facts the answer must disclose, generated from the data itself
-* ``action``: what to do next when the status is not ok
+* ``action``: what the agent should do next when the status is not ok (internal)
+* ``message``: what to tell the user when the status is not ok (user-facing)
 * ``source``: the tables the evidence came from
 
 Names typed by a user ("store 2", "pallets", "Grocery") are resolved before querying;
@@ -35,6 +36,7 @@ class ToolResult:
     notes: list[str] = field(default_factory=list)
     action: str | None = None
     source: list[str] = field(default_factory=list)
+    message: str | None = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), default=json_default)
@@ -79,6 +81,7 @@ class EvidenceTools:
             data=self._rows("SELECT run_id, origin, is_live FROM runs ORDER BY origin"),
             action="Use one of the listed run_id values, or omit run_id for the live run.",
             source=["runs"],
+            message=f"I couldn't find a forecast run called '{run_id}'.",
         )
 
     def _resolve(self, kind: str, text: str, options: list[str]) -> tuple[str | None, list[str], ToolResult | None]:
@@ -104,11 +107,13 @@ class EvidenceTools:
                 "ambiguous",
                 data=[{kind: c} for c in candidates],
                 action=f"Ask the user which {kind} they mean.",
+                message=f"'{raw}' could mean more than one {kind}. Which one do you mean?",
             )
         return None, [], ToolResult(
             "not_found",
             data=[{kind: o} for o in options],
             action=f"No {kind} matches '{raw}'. Ask the user to pick one of the listed values.",
+            message=f"I couldn't find a {kind} called '{raw}'.",
         )
 
     def _week(self, run: dict[str, Any], department: str, store: str, week: str | date) -> tuple[pd.Timestamp | None, list[str], ToolResult | None]:
@@ -129,6 +134,7 @@ class EvidenceTools:
             data=[{"week_start": w} for w in weeks],
             action=f"Run {run['run_id']} has no week starting {start.date()} for this store and department; use a listed week or another run.",
             source=["weekly_hours"],
+            message=f"This forecast doesn't cover the week starting {start.date()} for {store} {department}. Weeks it covers:",
         )
 
     # --------------------------------------------------------------- discovery
@@ -212,6 +218,7 @@ class EvidenceTools:
                 "not_found",
                 action=f"Run {run['run_id']} has no forecast for {store_id}/{drv} on {day_ts.date()}; its window starts {pd.Timestamp(run['origin']).date()} and lasts {run['horizon_days']} days.",
                 source=["forecasts"],
+                message=f"There's no forecast for {store_id} {drv} on {day_ts.date()}: this forecast covers {run['horizon_days']} days from {pd.Timestamp(run['origin']).date()}.",
             )
         row = forecast[0]
         if not row["is_trading_day"]:
@@ -306,7 +313,7 @@ class EvidenceTools:
             params,
         )
         if not rows:
-            return ToolResult("not_found", notes=notes, action="No completed past runs to score yet for this selection.", source=["accuracy"])
+            return ToolResult("not_found", notes=notes, action="No completed past runs to score yet for this selection.", source=["accuracy"], message="There isn't enough past forecast history to measure accuracy for that yet.")
         notes.append("WAPE = total absolute error / total actual volume; lower is better. Actuals are reported (cleaned) volumes.")
         notes.append(f"Scored windows all ended before {pd.Timestamp(run['origin']).date()}.")
         return ToolResult("ok", data=rows, notes=notes, source=["accuracy"])
@@ -362,7 +369,7 @@ class EvidenceTools:
                 [later["origin"], pd.Timestamp(week_start)],
             )
             if not previous:
-                return ToolResult("not_found", action="No earlier run covers this week; nothing to compare.", source=["runs"])
+                return ToolResult("not_found", action="No earlier run covers this week; nothing to compare.", source=["runs"], message="No earlier forecast covered that week, so there's nothing to compare yet.")
             earlier_run_id = previous[0]["run_id"]
         a = self.explain_week_hours(store, department, week_start, earlier_run_id)
         b = self.explain_week_hours(store, department, week_start, later["run_id"])
@@ -395,6 +402,7 @@ class EvidenceTools:
             data=self._rows('SELECT DISTINCT "group" FROM feature_dictionary ORDER BY 1'),
             action="Use a feature name or one of the listed groups.",
             source=["feature_dictionary"],
+            message=f"I don't have a definition for '{name}'. I can explain these groups:",
         )
 
 
