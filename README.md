@@ -26,7 +26,7 @@ synthetic retail data → walk-forward forecast (GBM + SHAP) → explainability 
 - [x] Hours conversion with exact hour contributions (weekly hours 38–61% more accurate than seasonal naive)
 - [x] Explainability extract (past + live runs, as-of, contract enforced at write and load) + locked-down agent database
 - [x] Evidence tools (11, read-only, parameterised, uniform result with guards)
-- [ ] Agent graph + capability registry + faithfulness gate
+- [x] Agent: LLM plans and writes; code routes, guards, declines and verifies every number (faithfulness gate with retry + safe fallback)
 - [ ] Evals: deterministic, structural, judge; golden cases incl. misuse and injection
 - [ ] Monitoring over time, security doc, deployment
 - [ ] Graph-vs-flat retrieval experiment over the store hierarchy
@@ -38,6 +38,8 @@ uv run python scripts/generate_data.py --out data/raw   # synthetic dataset (par
 uv run python scripts/run_backtest.py --out reports      # walk-forward back-test (~7 min)
 uv run python scripts/build_extract.py                   # explainability extract + agent database (~2 min)
 uv run pytest -q
+cp .env.example .env   # add GOOGLE_API_KEY
+uv run python scripts/ask.py "Why does store 1 grocery need these hours next week?"
 ```
 
 ## Licence

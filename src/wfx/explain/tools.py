@@ -37,10 +37,11 @@ class ToolResult:
     source: list[str] = field(default_factory=list)
 
     def to_json(self) -> str:
-        return json.dumps(asdict(self), default=_json_default)
+        return json.dumps(asdict(self), default=json_default)
 
 
-def _json_default(value: object) -> object:
+def json_default(value: object) -> object:
+    """JSON encoder fallback: dates as ISO strings, missing values as null."""
     if isinstance(value, (pd.Timestamp, date)):
         return value.isoformat()[:10]
     if pd.isna(value):

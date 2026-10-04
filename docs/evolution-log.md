@@ -123,3 +123,22 @@ By lead week: 6.8% → 6.8% → 7.2% → 7.3% (baseline 11.1% → 12.9%). The mo
 ### Iteration 5.4 — An honest number the agent must not hide
 For store S002 transactions, the model is **worse than the seasonal-naive baseline at 1 week ahead** (6.0% vs 4.9% WAPE) and better at weeks 2–4. The accuracy tool reports it per lead week; the agent's prompt and evals must require it to be stated, not averaged away.
 
+---
+
+## Phase 6 — The Agent (2026-10-03)
+
+### Iteration 6.1 — The LLM does two narrow jobs; code does the rest
+**Built:** `agent/` (LangGraph). The LLM (Gemini, behind a provider interface) **plans** (question type + the names/dates the user stated, as a structured object) and **writes** the explanation. Code decides everything else:
+- **Routing:** each question type maps to a fixed list of evidence tools (`agent/routing.py`); the LLM never picks tools.
+- **Missing facts:** a question without a needed store/department/week gets a clarifying question, not a guess.
+- **Guards:** a tool returning not_found/ambiguous ends in a guided reply with the valid options; the explainer isn't called.
+- **Declines:** staffing decisions are declined with an offer of the evidence; off-topic questions are declined.
+
+### Iteration 6.2 — The numeric faithfulness gate
+**Built:** `agent/faithfulness.py`. Every number and date in a draft answer must exist in the evidence (rounding and fraction→percentage allowed; numbers from the question allowed). Computed numbers are rejected: if an answer needs a total or difference, a tool provides it.
+**Loop:** fail → the explainer gets the exact unsupported values and rewrites once → fail again → a templated answer built only from evidence (which passes the gate by construction).
+**Tested:** invented values, a sum the LLM computed itself, and wrong dates (ISO and "12 January 2026") are all caught; grounded rounding, percentages and worded dates pass.
+
+### Iteration 6.3 — Deterministic agent tests
+A scripted LLM replays prepared plans and drafts, so every route (answer, retry, fallback, clarify, guard, decline) is tested without network calls or cost. 107 tests in total.
+

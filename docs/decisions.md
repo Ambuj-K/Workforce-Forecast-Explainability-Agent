@@ -83,3 +83,12 @@ Each decision records the context, the options, the choice and what would make u
 **Why:** Testable without an LLM; one result shape keeps the agent's handling and the faithfulness gate simple; `source` makes every number traceable to a table. Parameterised SQL + strict name resolution make user text inert.
 **Revisit if:** a question type can't be answered by the fixed tools (then add a tool, not free-form SQL).
 
+## ADR-015 — The LLM plans and writes; code routes, guards and verifies
+**Decision:** Two LLM calls per answer at most (+1 retry): a structured plan and the explanation. Tool selection, clarification, guard handling, declines and number verification are code.
+**Why:** Each LLM decision is a place answers can silently go wrong; keeping tool choice and verification deterministic makes behaviour testable with a scripted LLM and keeps every number traceable.
+**Revisit if:** questions routinely span several types (then allow a plan with multiple question types, still routed in code).
+
+## ADR-016 — Gemini behind a provider interface
+**Decision:** Gemini (free tier, temperature 0, JSON-schema output for plans) via a small `LLM` protocol; a `ScriptedLLM` implements the same protocol for tests.
+**Why:** Free for development; the interface lets deployment switch to a managed platform with guardrails (planned) without touching the agent.
+
