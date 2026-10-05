@@ -308,13 +308,19 @@ class EvidenceTools:
             notes += n
         rows = self._rows(
             "SELECT lead_week, count(DISTINCT scored_run_id) AS runs_scored, sum(days) AS days, "
-            "sum(abs_err_model) / sum(actual) AS wape_model, sum(abs_err_baseline) / sum(actual) AS wape_baseline "
+            "sum(abs_err_model) / sum(actual) AS wape_model, sum(abs_err_baseline) / sum(actual) AS wape_baseline, "
+            "round(100 * sum(abs_err_model) / sum(actual), 1) AS error_pct_model, "
+            "round(100 * sum(abs_err_baseline) / sum(actual), 1) AS error_pct_baseline, "
+            "sum(abs_err_model) > sum(abs_err_baseline) AS model_worse_than_baseline "
             f"FROM accuracy WHERE {' AND '.join(filters)} GROUP BY lead_week ORDER BY lead_week",  # filters are fixed literals
             params,
         )
         if not rows:
             return ToolResult("not_found", notes=notes, action="No completed past runs to score yet for this selection.", source=["accuracy"], message="There isn't enough past forecast history to measure accuracy for that yet.")
-        notes.append("WAPE = total absolute error / total actual volume; lower is better. Actuals are reported (cleaned) volumes.")
+        notes.append("Error % = total absolute error / total actual volume, already in percent (quote error_pct_* as given); lower is better.")
+        worse = [r["lead_week"] for r in rows if r["model_worse_than_baseline"]]
+        if worse:
+            notes.append(f"The model was less accurate than the simple same-weekday method at lead week(s) {', '.join(map(str, worse))}.")
         notes.append(f"Scored windows all ended before {pd.Timestamp(run['origin']).date()}.")
         return ToolResult("ok", data=rows, notes=notes, source=["accuracy"])
 
@@ -394,9 +400,13 @@ class EvidenceTools:
 
     def describe_feature(self, name: str) -> ToolResult:
         """Plain-English meaning of a feature or feature group."""
-        rows = self._rows('SELECT feature, "group", description, known_in_advance FROM feature_dictionary WHERE feature = ? OR "group" = ?', [name, name])
-        if rows:
-            return ToolResult("ok", data=rows, source=["feature_dictionary"])
+        known = self._column('SELECT feature FROM feature_dictionary UNION SELECT DISTINCT "group" FROM feature_dictionary')
+        norm = str(name).strip().lower().replace(" ", "_").replace("-", "_").strip("'\"")
+        match = norm if norm in known else next(iter(difflib.get_close_matches(norm, known, n=1, cutoff=0.8)), None)
+        if match:
+            rows = self._rows('SELECT feature, "group", description, known_in_advance FROM feature_dictionary WHERE feature = ? OR "group" = ?', [match, match])
+            notes = [] if match == name else [f"Interpreted '{name}' as '{match}'."]
+            return ToolResult("ok", data=rows, notes=notes, source=["feature_dictionary"])
         return ToolResult(
             "not_found",
             data=self._rows('SELECT DISTINCT "group" FROM feature_dictionary ORDER BY 1'),

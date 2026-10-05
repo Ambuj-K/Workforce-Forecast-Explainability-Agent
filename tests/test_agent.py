@@ -155,3 +155,21 @@ def test_gate_rejects_invented_computed_or_wrong_values(answer, bad):
 
 def test_gate_allows_numbers_from_the_question():
     assert check("For store 7 there is no data.", EVIDENCE, question="what about store 7?").passed
+
+
+def test_gate_does_not_let_a_false_premise_through():
+    """Large numbers from the question are not evidence: the agent can't repeat them as fact."""
+    result = check("Yes, promotions added 80 hours.", EVIDENCE, question="Why did promotions add 80 hours?")
+    assert not result.passed and "80" in result.unsupported
+
+
+def test_gate_allows_correcting_a_false_premise():
+    answer = "The data does not show the promotion adding 80 hours; the model attributes -6.7 hours to it."
+    assert check(answer, EVIDENCE, question="Why did promotions add 80 hours?").passed
+
+
+def test_gate_rejects_agreeing_with_a_false_premise_even_with_other_negations():
+    answer = "The promotion added 80 hours. Holidays did not matter."
+    result = check(answer, EVIDENCE, question="Why did promotions add 80 hours?")
+    assert not result.passed and "80" in result.unsupported
+

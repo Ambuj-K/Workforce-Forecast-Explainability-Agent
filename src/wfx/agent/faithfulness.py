@@ -4,7 +4,10 @@ The answer may round (171.89 -> 171.9 or 172) and show fractions as percentages
 (0.0601 -> 6.0%), but it may not compute new numbers (sums, differences, ratios) or
 invent any. Tools provide derived numbers when an answer needs them.
 
-Dates are checked as whole dates; numbers that appear in the user's question are allowed.
+Dates are checked as whole dates. Numbers from the user's question are allowed when they are
+small identifiers (store, week or day references, <= 52). A larger figure from the question is
+allowed only in a sentence that negates it ("the data does not show 80 hours"), so a false
+premise can be corrected but never repeated as fact.
 """
 
 from __future__ import annotations
@@ -14,6 +17,9 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
+MAX_QUESTION_IDENTIFIER = 52  # store / week / day references the answer may echo from the question
+NEGATION = re.compile(r"\b(not|n't|no|never|rather than|instead|isn't|doesn't|didn't|wasn't)\b", re.IGNORECASE)
+SENTENCE = re.compile(r"[^.!?\n]+[.!?]?")
 ISO_DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 NUMBER = re.compile(r"(?<![\w.])[-+−]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?%?")
 _MONTHS = {
@@ -98,7 +104,15 @@ def _supported(value: float, decimals: int, is_percent: bool, numbers: set[float
 def check(answer: str, evidence: Any, question: str = "") -> GateResult:
     """Check that every number and date in ``answer`` is grounded in ``evidence`` (or the question)."""
     numbers, dates = evidence_index(evidence)
-    q_numbers = {v for _r, v, _d, _p in _numbers_in_text(question)}
+    q_all = {v for _r, v, _d, _p in _numbers_in_text(question)}
+    q_numbers = {v for v in q_all if abs(v) <= MAX_QUESTION_IDENTIFIER}
+    negated = {
+        v
+        for sentence in SENTENCE.findall(answer)
+        if NEGATION.search(sentence)
+        for _r, v, _d, _p in _numbers_in_text(ISO_DATE.sub(" ", sentence))
+        if v in q_all
+    }
     evidence_days = {(int(d[:4]), int(d[5:7]), int(d[8:])) for d in dates}
     unsupported: list[str] = []
 
@@ -115,7 +129,7 @@ def check(answer: str, evidence: Any, question: str = "") -> GateResult:
     text = WORDED_DATE.sub(" ", text)
 
     for raw, value, decimals, is_percent in _numbers_in_text(text):
-        if value in q_numbers or _supported(value, decimals, is_percent, numbers):
+        if value in q_numbers or value in negated or _supported(value, decimals, is_percent, numbers):
             continue
         unsupported.append(raw)
     return GateResult(passed=not unsupported, unsupported=unsupported)

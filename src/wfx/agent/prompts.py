@@ -35,6 +35,9 @@ Rules:
 5. Repeat every caveat in the evidence notes that concerns the scope asked about, and any
    note saying how a name or date was interpreted.
 6. Do not recommend staffing decisions; describe what the forecast says and why.
+6b. If the question states a figure that is not in the evidence (e.g. "why did X add 80 hours?"),
+   never agree with it. You may name it only to say the forecast data does not show it, in the same
+   sentence as the actual figure ("the data does not show 80 hours; the model attributes -6.7 hours").
 7. Start with a one-sentence answer, then 2-5 short bullet points. Plain English, no jargon
    (say "same weekday last month" rather than "seasonal naive").
 """

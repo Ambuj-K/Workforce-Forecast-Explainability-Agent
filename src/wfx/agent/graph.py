@@ -35,6 +35,7 @@ class AgentState(TypedDict, total=False):
     outcome: str  # answered | clarification | guarded | declined | fallback
     attempts: int
     unsupported: list[str]
+    rejected: list[dict[str, Any]]  # drafts the gate rejected, with their unsupported values
 
 
 @dataclass
@@ -45,6 +46,7 @@ class AgentAnswer:
     evidence: list[dict[str, Any]] = field(default_factory=list)
     attempts: int = 0
     unsupported: list[str] = field(default_factory=list)
+    rejected: list[dict[str, Any]] = field(default_factory=list)
 
 
 class ExplainabilityAgent:
@@ -54,7 +56,7 @@ class ExplainabilityAgent:
         self._graph = self._build()
 
     def ask(self, question: str) -> AgentAnswer:
-        state = self._graph.invoke({"question": question, "attempts": 0, "evidence": []})
+        state = self._graph.invoke({"question": question, "attempts": 0, "evidence": [], "rejected": []})
         return AgentAnswer(
             answer=state["answer"],
             outcome=state["outcome"],
@@ -62,6 +64,7 @@ class ExplainabilityAgent:
             evidence=state.get("evidence", []),
             attempts=state.get("attempts", 0),
             unsupported=state.get("unsupported", []),
+            rejected=state.get("rejected", []),
         )
 
     # ---------------------------------------------------------------- graph
@@ -141,17 +144,26 @@ class ExplainabilityAgent:
         evidence = [{k: e[k] for k in ("tool", "status", "data", "notes")} for e in state["evidence"]]
         prompt = f"Question: {state['question']}\n\nEvidence (JSON):\n{json.dumps(evidence, default=json_default)}"
         if state.get("unsupported"):
+            from_question = [v for v in state["unsupported"] if v.rstrip("%") in state["question"]]
             prompt += (
                 "\n\nYour previous draft was rejected. These values are not in the evidence: "
                 + ", ".join(state["unsupported"])
                 + ". Rewrite it using only numbers that appear in the evidence; do not compute new ones."
             )
+            if from_question:
+                prompt += (
+                    " " + ", ".join(from_question) + " came from the user's question and is not supported by the data:"
+                    " never state it as fact; mention it only in a sentence saying the data does not show it."
+                )
         answer = self._llm.text(prompts.EXPLAINER, prompt)
         return {"answer": answer, "attempts": state.get("attempts", 0) + 1}
 
     def _gate(self, state: AgentState) -> AgentState:
         result = check(state["answer"], state["evidence"], state["question"])
-        return {"unsupported": result.unsupported, "outcome": "answered" if result.passed else "rejected"}
+        rejected = state.get("rejected", [])
+        if not result.passed:
+            rejected = [*rejected, {"draft": state["answer"], "unsupported": result.unsupported}]
+        return {"unsupported": result.unsupported, "outcome": "answered" if result.passed else "rejected", "rejected": rejected}
 
     @staticmethod
     def _after_gate(state: AgentState) -> str:
@@ -173,17 +185,23 @@ class ExplainabilityAgent:
         return {"answer": "\n".join(lines), "outcome": "fallback"}
 
 
+def _fmt(value: Any) -> str:
+    if value is None:
+        return "n/a"
+    if isinstance(value, float):
+        return f"{value:.2f}"
+    return str(json_default(value)) if not isinstance(value, (str, int, bool)) else str(value)
+
+
 def _flatten(row: Any, prefix: str = "") -> list[str]:
-    if isinstance(row, dict):
-        out: list[str] = []
-        for key, value in row.items():
-            out.extend(_flatten(value, f"{prefix}{key} "))
-        return out
+    """One readable line per record: nested records are labelled, flat ones joined on a line."""
     if isinstance(row, list):
-        out = []
-        for item in row:
-            out.extend(_flatten(item, prefix))
-        return out
-    if isinstance(row, float):
-        return [f"{prefix.strip()}: {row:.2f}"]
-    return [f"{prefix.strip()}: {json_default(row) if row is not None else 'n/a'}"]
+        return [line for item in row for line in _flatten(item, prefix)]
+    if not isinstance(row, dict):
+        return [f"{prefix.strip()}: {_fmt(row)}"]
+    flat = {k: v for k, v in row.items() if not isinstance(v, (dict, list))}
+    lines = [f"{prefix.strip() + ': ' if prefix.strip() else ''}" + ", ".join(f"{k.replace('_', ' ')} {_fmt(v)}" for k, v in flat.items())] if flat else []
+    for key, value in row.items():
+        if isinstance(value, (dict, list)):
+            lines.extend(_flatten(value, f"{key.replace('_', ' ')}"))
+    return lines
