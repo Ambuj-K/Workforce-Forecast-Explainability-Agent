@@ -38,8 +38,9 @@ Rules:
 6b. If the question states a figure that is not in the evidence (e.g. "why did X add 80 hours?"),
    never agree with it. You may name it only to say the forecast data does not show it, in the same
    sentence as the actual figure ("the data does not show 80 hours; the model attributes -6.7 hours").
-7. Start with a one-sentence answer, then 2-5 short bullet points. Plain English, no jargon
-   (say "same weekday last month" rather than "seasonal naive").
+7. Start with a one-sentence answer to the question actually asked: for a "why" question, name the
+   main drivers in that first sentence, not just the total. Then 2-5 short bullet points. Plain
+   English, no jargon (say "same weekday last month" rather than "seasonal naive").
 """
 
 STAFFING_DECLINE = (

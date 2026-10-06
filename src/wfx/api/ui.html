@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workforce Forecast Explainer</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#fff; --ink:#1d1d1b; --muted:#6b6b66; --line:#e3e2dc; --accent:#2f5d50;
+          --ok:#2f6b3a; --warn:#9a6a00; --bad:#a3322a; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161615; --card:#1f1f1d; --ink:#ecebe6; --muted:#a3a29b;
+          --line:#33332f; --accent:#8cc2b0; --ok:#7fc28a; --warn:#e0b44f; --bad:#ef8a80; } }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--ink); }
+  main { max-width:880px; margin:0 auto; padding:24px 16px 48px; }
+  h1 { font-size:20px; margin:0 0 4px; } .sub { color:var(--muted); margin:0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  textarea { width:100%; min-height:64px; font:inherit; color:inherit; background:transparent; border:1px solid var(--line);
+             border-radius:8px; padding:10px; resize:vertical; }
+  button { font:inherit; background:var(--accent); color:var(--card); border:0; border-radius:8px; padding:8px 16px; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:wait; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+  .chip { font-size:12px; border:1px solid var(--line); border-radius:999px; padding:2px 10px; color:var(--muted); cursor:pointer; background:transparent; }
+  .badge { font-size:12px; font-weight:600; padding:2px 8px; border-radius:6px; border:1px solid currentColor; }
+  .answered { color:var(--ok); } .fallback, .guarded, .clarification { color:var(--warn); } .declined { color:var(--muted); }
+  .critical { color:var(--bad); } .warning { color:var(--warn); }
+  #answer { white-space:pre-wrap; margin-top:12px; } details { margin-top:10px; color:var(--muted); font-size:13px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; } td, th { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); }
+  h2 { font-size:15px; margin:0 0 8px; } ul { margin:6px 0; padding-left:18px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Workforce Forecast Explainer</h1>
+  <p class="sub">Ask why a store needs its hours, how accurate forecasts have been, or what changed since the last run. Every number in an answer is checked against the forecast data.</p>
+
+  <section class="card">
+    <textarea id="q" placeholder="e.g. Why does store 1 grocery need these hours next week?"></textarea>
+    <div class="row">
+      <button id="ask">Ask</button>
+      <span id="meta" class="sub" style="margin:0"></span>
+    </div>
+    <div class="row" id="examples"></div>
+    <div id="answer"></div>
+    <details id="evidence-box" hidden><summary>Evidence used</summary><ul id="evidence"></ul></details>
+  </section>
+
+  <section class="card">
+    <h2>Monitoring</h2>
+    <ul id="alerts"></ul>
+    <table id="trend"></table>
+    <p id="agent" class="sub" style="margin:8px 0 0"></p>
+  </section>
+</main>
+<script>
+const EXAMPLES = [
+  "Why does store 1 grocery need these hours next week?",
+  "Can I trust the transactions forecast for store 2?",
+  "Is there anything I should be careful about in this week's forecast?",
+  "What changed for store 1 grocery for the week of 5 January since last week's run?",
+];
+const el = (tag, text, cls) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n; };
+const pct = v => v == null ? "–" : (100 * v).toFixed(1) + "%";
+
+for (const ex of EXAMPLES) {
+  const chip = el("button", ex, "chip");
+  chip.onclick = () => { document.getElementById("q").value = ex; ask(); };
+  document.getElementById("examples").append(chip);
+}
+
+async function ask() {
+  const q = document.getElementById("q").value.trim();
+  if (q.length < 3) return;
+  const button = document.getElementById("ask"); button.disabled = true;
+  document.getElementById("answer").textContent = "Thinking…";
+  document.getElementById("meta").textContent = "";
+  try {
+    const res = await fetch("/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q }) });
+    if (!res.ok) throw new Error((await res.json()).detail?.[0]?.msg || res.statusText);
+    const data = await res.json();
+    document.getElementById("answer").textContent = data.answer;
+    const meta = document.getElementById("meta"); meta.textContent = "";
+    meta.append(el("span", data.outcome, "badge " + data.outcome), el("span", `  ${(data.latency_ms / 1000).toFixed(1)}s`));
+    const list = document.getElementById("evidence"); list.textContent = "";
+    for (const e of data.evidence) list.append(el("li", `${e.tool} → ${e.status}${e.notes.length ? ": " + e.notes.join(" ") : ""}`));
+    document.getElementById("evidence-box").hidden = data.evidence.length === 0;
+    loadMonitoring();
+  } catch (err) {
+    document.getElementById("answer").textContent = "Something went wrong: " + err.message;
+  } finally { button.disabled = false; }
+}
+document.getElementById("ask").onclick = ask;
+document.getElementById("q").addEventListener("keydown", e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) ask(); });
+
+async function loadMonitoring() {
+  const data = await (await fetch("/monitoring")).json();
+  const alerts = document.getElementById("alerts"); alerts.textContent = "";
+  if (!data.alerts.length) alerts.append(el("li", "No alerts."));
+  for (const a of data.alerts) { const li = el("li"); li.append(el("span", a.severity, "badge " + a.severity), el("span", "  " + a.message)); alerts.append(li); }
+  const table = document.getElementById("trend"); table.textContent = "";
+  const head = el("tr"); for (const h of ["Scored run", "Window end", "Model error", "Same-weekday error", "Edge"]) head.append(el("th", h)); table.append(head);
+  for (const r of data.forecast.accuracy_trend) {
+    const tr = el("tr");
+    for (const v of [r.run_id, r.window_end, pct(r.wape_model), pct(r.wape_baseline), pct(r.skill)]) tr.append(el("td", v));
+    table.append(tr);
+  }
+  const a = data.agent;
+  document.getElementById("agent").textContent = a.interactions
+    ? `Agent: ${a.interactions} questions · first-pass gate ${pct(a.first_pass_rate)} · fallback ${pct(a.fallback_rate)} · p95 latency ${(a.latency_p95_ms / 1000).toFixed(1)}s`
+    : "Agent: no questions logged yet.";
+}
+loadMonitoring();
+</script>
+</body>
+</html>

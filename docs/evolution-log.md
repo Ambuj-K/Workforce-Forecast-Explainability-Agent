@@ -157,3 +157,43 @@ Nine real questions, every route exercised; every written explanation passed the
 **Fix:** tool results now carry a separate user-facing `message`; `action` stays internal. A test asserts internal instructions never reach the user.
 **Lesson:** Results written for the agent and messages written for the user are different contracts; keep them in different fields.
 
+---
+
+## Phase 7 — Evals (2026-10-05)
+
+### Iteration 7.1 — Goldens, deterministic checks, judge, baseline
+**Built:** `evals/`: 25 golden questions (why hours/volume, trust, caveats, change, baseline, breakdown, definitions, runs, staffing, off-topic, guards, clarification, false premise, injection). Facts that depend on the data (which store is stale, which had a gap, which closed) are filled in from the answer key at eval time.
+**Deterministic checks:** outcome, question type, tools, first-pass gate, required mentions, required evidence values, forbidden strings, attribution framing, underperformance stated when the evidence shows it, no staffing advice, no internal leaks. **Judge** (Gemini, structured verdict per criterion) only for clarity and framing. Every result stores the answer, evidence and rejected drafts; runs are compared with a saved baseline (pass→fail or judge drop > 0.1).
+
+### Iteration 7.2 — What the first runs found
+| Run | Passed | Finding → fix |
+|---|---|---|
+| 1 | 23/25 | "recent level" didn't match the group `recent_level` → tool normalises + fuzzy-matches terms |
+| 1 | | False premise ("why did the promotion add 80 hours?"): gate rejected the correct *correction* ("the data does not show 80 hours"), fell back → a large question figure is now allowed **only in a sentence that negates it**; agreement still fails |
+| 2 | 24/25 | Trust answer rejected once: model wrote **5.7%** for **0.0577** (truncated, not rounded) → the accuracy tool now returns display-ready percentages and a generated note when the model is worse than the baseline. **Don't make the LLM do arithmetic, not even ×100** |
+| 3 | 25/25 | Judge drops flagged by the regression check: one real (first sentence gave the total, not the *why*) → prompt rule; one judge error (complained a +0.2 h factor was omitted from "biggest drivers") → recorded as judge variance, not chased |
+| 4–5 | 24/25 | The new opening-sentence rule made the model summarise minor factors and **add them up itself** ("holidays, pricing and seasonal history combined: −2.3 hours"), twice in a row → the gate rejected it each time. Banning summaries would make answers worse, so the explain tools now return **top 3 drivers + the other groups combined, pre-computed** → 9/9 first-pass on why-questions |
+
+**Gate gap closed on the way:** numbers from the question had been allowed unconditionally, so a false premise ("…add 80 hours?") could be repeated as fact. Now only small identifiers (≤ 52) pass freely.
+**Lesson:** Each fix landed where the problem was, not where it showed up: matching in the tool, arithmetic in the tool, wording in the prompt, a premise rule in the gate, and an expectation fix in the golden when the agent was right and the test was wrong.
+
+---
+
+## Phase 8 — Monitoring, API and UI (2026-10-06)
+
+### Iteration 8.1 — Forecast monitoring from the agent's own database
+**Built:** `monitoring/forecast.py`: accuracy per scored run (overall and by lead week, vs the same-weekday method), data quality per run (stale feeds, missing days, excluded outliers, duplicates, ramping stores), and alert rules: accuracy drift, worse than baseline, a store-driver worse than baseline in consecutive runs, stale data in the live run.
+**On the real extract:** error 6.5% → 6.5% → 6.7% → 7.8% with the model ahead of the baseline every run; the stale feed raises the only alert.
+
+### Iteration 8.2 — Drift must be relative, or every December is an incident
+**Problem:** The latest scored window covers Christmas: the model's error rose to 7.8%, but the simple method's rose from 10.7% to 16.9%, so the model's edge actually *grew* (+54%). A raw-error drift rule would fire every December.
+**Fix:** Drift = error above 1.25× its typical level **and** the edge over the simple method below its typical level. Tests cover both a Christmas-like run (no alert) and real drift (alert).
+**Lesson:** Monitor the model against a baseline that faces the same conditions, not against its own history alone.
+
+### Iteration 8.3 — Agent monitoring
+**Built:** `monitoring/agent.py`: every question through the API is logged (masked question, outcome, gate attempts, rejected values, tools, latency; answers are not stored). Health: first-pass gate rate, fallback rate, latency p50/p95, most-rejected values; alerts on low first-pass, high fallback, slow p95 (only above a minimum sample). Eval history comes from saved eval results: pass rate 92% → 96% → 100% → 96% → 100% over the C6 runs.
+
+### Iteration 8.4 — API + minimal UI
+**Built:** `api/app.py` (FastAPI: `/`, `/health`, `/ask`, `/runs`, `/monitoring`) and a single-page UI (ask, example questions, outcome badge, evidence used, alerts, accuracy trend, agent health). Questions are length-limited; the shared read-only DuckDB connection is used under a lock (one question at a time, fine for a demo, noted for deployment).
+**Live check (Gemini):** answers, decline and guided reply all correct over HTTP; monitoring showed the stale-data alert and 100% first-pass. **Explained answers take 12–15 s** (two free-tier calls), right at the 15 s p95 threshold: the deployment step should address it.
+

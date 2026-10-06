@@ -153,3 +153,12 @@ def test_describe_feature_by_name_or_group(tools):
     assert tools.describe_feature("lag_364").data[0]["group"] == "seasonal_history"
     assert len(tools.describe_feature("promotion").data) == 1
     assert tools.describe_feature("weather").status == "not_found"
+
+
+def test_summary_precomputes_the_minor_groups(tools, live_week):
+    data = tools.explain_week_hours("S001", "grocery", live_week).data[0]
+    summary, parts = data["summary"], [p for p in data["contributions"] if p["group"] != "base"]
+    assert len(summary["top_drivers"]) == 3
+    assert summary["other_groups_combined"] == pytest.approx(sum(p["hours"] for p in parts[3:]))
+    assert summary["other_groups"] == [p["group"] for p in parts[3:]]
+

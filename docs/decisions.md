@@ -92,3 +92,19 @@ Each decision records the context, the options, the choice and what would make u
 **Decision:** Gemini (free tier, temperature 0, JSON-schema output for plans) via a small `LLM` protocol; a `ScriptedLLM` implements the same protocol for tests.
 **Why:** Free for development; the interface lets deployment switch to a managed platform with guardrails (planned) without touching the agent.
 
+## ADR-017 — Deterministic checks first, judge second, artifacts always
+**Decision:** Every golden is scored by deterministic checks (routing, gate, evidence values, required/forbidden content, underperformance, leaks); an LLM judge scores only clarity and framing. Results store the answer, evidence and rejected drafts; regressions vs a saved baseline are pass→fail or a judge drop > 0.1.
+**Why:** Most failure modes here are checkable in code, and code doesn't drift. The judge is the same model family as the agent and can be noisy; its verdicts are kept with reasoning and treated as a quality signal, not truth. Data-dependent expectations are resolved from the answer key, so goldens survive regeneration.
+
+## ADR-018 — Tools return display-ready numbers
+**Decision:** Where an answer needs a derived figure (percentages, differences, totals), the tool returns it, already rounded for display.
+**Why:** The LLM truncated 5.77% to 5.7% and summed three contributions itself; the gate caught both, but the cheaper fix is to never ask the model to compute.
+
+## ADR-019 — Accuracy drift is judged relative to the simple method
+**Decision:** Alert on drift only when the model's error rises above 1.25× its typical level **and** its edge over the same-weekday method falls below its typical level.
+**Why:** Hard periods (Christmas) raise everyone's error; the baseline experiences the same conditions, so the edge isolates model degradation from a hard week.
+
+## ADR-020 — Log interactions for monitoring, not answers
+**Decision:** The API logs masked questions, outcomes, gate attempts, rejected values, tools and latency; not the answer text.
+**Why:** That's what diagnoses agent health (first-pass rate, fallbacks, slow paths) while keeping personal data out of logs; answers can be regenerated from the extract if needed.
+

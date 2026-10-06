@@ -27,8 +27,9 @@ synthetic retail data → walk-forward forecast (GBM + SHAP) → explainability 
 - [x] Explainability extract (past + live runs, as-of, contract enforced at write and load) + locked-down agent database
 - [x] Evidence tools (11, read-only, parameterised, uniform result with guards)
 - [x] Agent: LLM plans and writes; code routes, guards, declines and verifies every number (faithfulness gate with retry + safe fallback)
-- [ ] Evals: deterministic, structural, judge; golden cases incl. misuse and injection
-- [ ] Monitoring over time, security doc, deployment
+- [x] Evals: 25 goldens (incl. staffing, false premise, injection), deterministic checks + judge, baseline regression: 25/25, 100% first-pass gate, judge 0.97–1.00 across runs
+- [x] Monitoring over time (accuracy/data-quality trends, drift relative to baseline, agent health, eval trend) + API + minimal UI
+- [ ] Security doc (framework-mapped, controls as code) and deployment on a managed AI platform
 - [ ] Graph-vs-flat retrieval experiment over the store hierarchy
 
 ## Quick start
@@ -40,6 +41,8 @@ uv run python scripts/build_extract.py                   # explainability extrac
 uv run pytest -q
 cp .env.example .env   # add GOOGLE_API_KEY
 uv run python scripts/ask.py "Why does store 1 grocery need these hours next week?"
+uv run python scripts/run_evals.py      # golden questions vs the saved baseline
+uv run python scripts/serve.py          # API + UI at http://127.0.0.1:8000
 ```
 
 ## Licence

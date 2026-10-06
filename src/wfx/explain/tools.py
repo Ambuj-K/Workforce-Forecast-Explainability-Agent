@@ -194,7 +194,12 @@ class EvidenceTools:
         )
         notes = [*n1, *n2, *n3, f"Run {run['run_id']} (made {pd.Timestamp(run['origin']).date()})."]
         notes.append("Contributions are the model's attributions, not proven causes; groups add up exactly to the variable hours.")
-        return ToolResult("ok", data=[{"totals": totals[0], "contributions": parts}], notes=notes, source=["weekly_hours", "weekly_hour_contributions"])
+        return ToolResult(
+            "ok",
+            data=[{"totals": totals[0], "contributions": parts, "summary": _summarise(parts, "group", "hours")}],
+            notes=notes,
+            source=["weekly_hours", "weekly_hour_contributions"],
+        )
 
     def explain_day_volume(self, store: str, driver: str, day: str | date, run_id: str | None = None, by: Literal["group", "feature"] = "group") -> ToolResult:
         """Why a store-driver-day forecast is what it is: base value + contributions by group or feature."""
@@ -230,7 +235,12 @@ class EvidenceTools:
             [run["run_id"], store_id, drv, day_ts],
         )
         notes = [*n1, *n2, "Contributions are the model's attributions, not proven causes; base + contributions = forecast exactly."]
-        return ToolResult("ok", data=[{"forecast": row, "contributions": parts}], notes=notes, source=["forecasts", "contributions"])
+        return ToolResult(
+            "ok",
+            data=[{"forecast": row, "contributions": parts, "summary": _summarise(parts, "name", "contribution")}],
+            notes=notes,
+            source=["forecasts", "contributions"],
+        )
 
     def get_hours_breakdown(self, store: str, department: str, week_start: str | date, run_id: str | None = None) -> ToolResult:
         """How volume becomes hours for a store-department-week: forecast volume per driver x labour standard + fixed hours."""
@@ -414,6 +424,17 @@ class EvidenceTools:
             source=["feature_dictionary"],
             message=f"I don't have a definition for '{name}'. I can explain these groups:",
         )
+
+
+def _summarise(parts: list[dict[str, Any]], label: str, value: str, top: int = 3) -> dict[str, Any]:
+    """Top drivers plus the other groups combined, pre-computed so the explainer never adds numbers up."""
+    drivers = [p for p in parts if p[label] != "base"]
+    rest = drivers[top:]
+    return {
+        "top_drivers": [{label: p[label], value: p[value]} for p in drivers[:top]],
+        "other_groups": [p[label] for p in rest],
+        "other_groups_combined": sum(p[value] for p in rest),
+    }
 
 
 TOOL_NAMES = (
