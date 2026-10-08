@@ -108,3 +108,7 @@ Each decision records the context, the options, the choice and what would make u
 **Decision:** The API logs masked questions, outcomes, gate attempts, rejected values, tools and latency; not the answer text.
 **Why:** That's what diagnoses agent health (first-pass rate, fallbacks, slow paths) while keeping personal data out of logs; answers can be regenerated from the extract if needed.
 
+## ADR-021 — Security controls are cited by test, and the citations are tested
+**Decision:** `docs/security.md` lists each control with the test or golden that proves it; `tests/test_security_controls.py` fails if a cited test or golden disappears, if a key-shaped secret appears in a tracked file, or if `.env` stops being ignored. Framework mappings (OWASP LLM Top 10, NIST AI RMF, ISO/IEC 42001 themes, EU AI Act) reference control IDs rather than restating them; known gaps are listed with where they get fixed.
+**Why:** A security document that isn't checked drifts from the code within weeks. Tying every claim to a passing test makes the document auditable and turns "do we still do X?" into a CI result.
+**Revisit if:** controls appear that can't be tested in-repo (e.g. platform identity, gateway rate limits); then cite the deployment config or its policy check instead.

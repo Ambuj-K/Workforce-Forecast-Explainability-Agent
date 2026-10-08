@@ -197,3 +197,13 @@ Nine real questions, every route exercised; every written explanation passed the
 **Built:** `api/app.py` (FastAPI: `/`, `/health`, `/ask`, `/runs`, `/monitoring`) and a single-page UI (ask, example questions, outcome badge, evidence used, alerts, accuracy trend, agent health). Questions are length-limited; the shared read-only DuckDB connection is used under a lock (one question at a time, fine for a demo, noted for deployment).
 **Live check (Gemini):** answers, decline and guided reply all correct over HTTP; monitoring showed the stale-data alert and 100% first-pass. **Explained answers take 12–15 s** (two free-tier calls), right at the 15 s p95 threshold: the deployment step should address it.
 
+## Phase 9 — Security, mapped to frameworks (2026-10-07)
+
+### Iteration 9.1 — Threat model and controls tied to tests
+**Built:** `docs/security.md`: trust boundaries (user → API, tools → database, pipeline → extract, agent → LLM provider), assets and actors; 17 controls (C-01…C-17), each citing the test or golden that proves it; mappings to OWASP LLM Top 10 (2025), NIST AI RMF functions, ISO/IEC 42001 themes; an EU AI Act classification (store-level forecasts, no decisions about individual workers → most likely not Annex III high-risk; transparency applies; what would change that).
+**Honest gaps (G-01…G-08):** no auth, no rate limiting, no per-user scoping, free-tier provider data terms, indirect injection via data text fields, no dependency scanning, same-family judge, 12–15 s latency. Most land in the deployment step.
+
+### Iteration 9.2 — Controls as code
+**Built:** `tests/test_security_controls.py`: every `tests/…::test_…` and `goldens.yaml#…` cited in the doc must exist; tracked files are scanned for key-shaped secrets; `.env` must be ignored and untracked.
+**Found while writing it:** the doc claimed the UI tells users they're talking to an AI assistant; it didn't. The UI now says so and that staffing decisions stay with the user. The first golden-citation regex also matched unrelated code terms (`pip-audit`), so citations use an explicit `goldens.yaml#id` form.
+**Lesson:** Writing the control table against real test names surfaces claims the system doesn't actually meet; the meta-test keeps it that way.

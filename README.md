@@ -29,7 +29,8 @@ synthetic retail data → walk-forward forecast (GBM + SHAP) → explainability 
 - [x] Agent: LLM plans and writes; code routes, guards, declines and verifies every number (faithfulness gate with retry + safe fallback)
 - [x] Evals: 25 goldens (incl. staffing, false premise, injection), deterministic checks + judge, baseline regression: 25/25, 100% first-pass gate, judge 0.97–1.00 across runs
 - [x] Monitoring over time (accuracy/data-quality trends, drift relative to baseline, agent health, eval trend) + API + minimal UI
-- [ ] Security doc (framework-mapped, controls as code) and deployment on a managed AI platform
+- [x] Security doc: threat model, 17 controls each tied to a test, mapped to OWASP LLM Top 10, NIST AI RMF, ISO/IEC 42001 and the EU AI Act; controls as code ([docs/security.md](docs/security.md))
+- [ ] Deployment on a managed AI platform (auth, rate limits, per-user store scoping, secrets vault)
 - [ ] Graph-vs-flat retrieval experiment over the store hierarchy
 
 ## Quick start
