@@ -23,3 +23,6 @@ eval_results*.json
 # Deployment config holding real token hashes / keys
 /users.yaml
 *.key
+
+# Scratch files from the editor
+Untitled-*
