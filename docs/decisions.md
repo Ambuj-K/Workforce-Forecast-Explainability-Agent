@@ -112,3 +112,13 @@ Each decision records the context, the options, the choice and what would make u
 **Decision:** `docs/security.md` lists each control with the test or golden that proves it; `tests/test_security_controls.py` fails if a cited test or golden disappears, if a key-shaped secret appears in a tracked file, or if `.env` stops being ignored. Framework mappings (OWASP LLM Top 10, NIST AI RMF, ISO/IEC 42001 themes, EU AI Act) reference control IDs rather than restating them; known gaps are listed with where they get fixed.
 **Why:** A security document that isn't checked drifts from the code within weeks. Tying every claim to a passing test makes the document auditable and turns "do we still do X?" into a CI result.
 **Revisit if:** controls appear that can't be tested in-repo (e.g. platform identity, gateway rate limits); then cite the deployment config or its policy check instead.
+
+## ADR-022 — Access control lives in the evidence tools, identity at the edge
+**Decision:** The API authenticates every data route (bearer tokens stored as hashes, or an identity proxy's header) and maps the user to a role and a set of stores. Each request builds its evidence tools with `allowed_stores`, so other stores don't resolve, aren't listed, and store-free questions aggregate only the user's stores (and say so). Monitoring, which aggregates across stores, is admin-only. There is no implicit "no sign-in" default; it's refused off loopback.
+**Why:** Scoping in a prompt can be argued with; scoping in the only code path to the data can't. Putting identity at the edge keeps the same code working with a token file today and the platform's SSO proxy later.
+**Revisit if:** users need row-level rules beyond stores (e.g. departments); extend the tools' scope, not the prompt.
+
+## ADR-023 — Platform-agnostic deployment: env config, mounted secrets, one image
+**Decision:** All settings come from environment variables; secrets are read from a mounted file (`NAME_FILE`) before the environment; the container is non-root, read-only friendly, signs in by default and builds the synthetic database in a builder stage. LLM calls have a timeout; failures return a plain 503, are logged and alerted on. Requests use a cursor each instead of one global lock.
+**Why:** Every major platform can mount secrets as files and run a container with environment config, so the cloud choice changes only the deploy step. Latency was measured before tuning anything: the model reports no thinking tokens and the 4–24 s spread is provider-side queueing on the free tier, so the fix is a paid/provisioned endpoint, not prompt or graph changes.
+**Revisit if:** the platform offers a native agent runtime worth adopting; the agent and tools are framework-light enough to move.

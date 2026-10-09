@@ -1,0 +1,20 @@
+# Never send secrets, local data or tooling into the build context
+.env
+.env.*
+!.env.example
+*.key
+users*.yaml
+.git
+.venv
+__pycache__
+*.pyc
+/data
+/reports
+/tests
+/evals
+*.duckdb
+*.parquet
+.DS_Store
+.vscode
+.idea
+Untitled-*

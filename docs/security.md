@@ -1,6 +1,6 @@
 # Security and AI-Risk Controls
 
-**Scope:** the explainability agent, its evidence tools, the agent database, the HTTP API and the monitoring log.
+**Scope:** the explainability agent, its evidence tools, the agent database, the HTTP API, the container image and the monitoring log.
 **Principle:** every control names the test or eval that proves it. `tests/test_security_controls.py` fails if a cited test or golden question disappears, so this document can't silently drift from the code.
 
 ---
@@ -17,13 +17,13 @@
 ```
 | Boundary | What crosses it | Trust |
 |---|---|---|
-| (1) user → API | free-text question | **untrusted**: may contain instructions, false premises, personal data |
+| (1) user → API | bearer token or proxy identity + free-text question | identity verified per request; question **untrusted**: may contain instructions, false premises, personal data |
 | (2) tools → database | parameterised queries | user text never reaches SQL; the database can't be written or used to read files |
 | (3) pipeline → extract | forecasts, contributions, flags | trusted only after the contract (schemas + invariants) passes at build, write and load |
 | (4) agent → LLM provider | question + evidence | **data leaves the system**: what is sent, and the provider's data terms, matter |
 
 **Assets:** forecast integrity (numbers planners act on), the truthfulness of explanations, the API key, data in prompts, availability of the API.
-**Actors considered:** a curious or careless user, a user attempting prompt injection, a compromised data feed, the LLM itself (hallucination, arithmetic errors).
+**Actors considered:** an unauthenticated caller, a signed-in user trying to see other stores, a curious or careless user, a user attempting prompt injection, a compromised data feed, the LLM itself (hallucination, arithmetic errors).
 
 ---
 
@@ -48,6 +48,13 @@
 | C-15 | **No secrets in the repository**: the API key lives only in a gitignored `.env`; tracked files are scanned for key patterns | credential leakage | `tests/test_security_controls.py::test_no_secrets_in_tracked_files`, `tests/test_security_controls.py::test_env_file_is_ignored` |
 | C-16 | **Continuous monitoring**: accuracy drift (baseline-relative), worse-than-baseline, stale data, agent first-pass/fallback/latency alerts | silent degradation | `tests/test_monitoring_api.py::test_real_drift_alerts`, `tests/test_monitoring_api.py::test_hard_period_is_not_drift`, `tests/test_monitoring_api.py::test_agent_health_and_alerts` |
 | C-17 | **Golden-question evals with regression baseline** (25 cases incl. injection, premise, staffing) | behaviour regressing after prompt/model changes | `tests/test_evals.py::test_regression_detection`, `evals/baseline.json` |
+| C-18 | **Sign-in on every data route**; monitoring (cross-store aggregates) is admin-only; tokens stored only as hashes and compared in constant time; proxy-identity mode accepts only listed users; running without sign-in is refused off loopback | unauthenticated access; privilege escalation to cross-store views | `tests/test_access.py::test_routes_require_sign_in_and_monitoring_requires_admin`, `tests/test_access.py::test_tokens_resolve_to_users_and_bad_tokens_do_not`, `tests/test_access.py::test_header_mode_trusts_only_listed_users`, `tests/test_access.py::test_no_sign_in_is_refused_off_loopback` |
+| C-19 | **Per-user store scoping inside the evidence tools**: other stores resolve as not found, are never listed, and store-free questions aggregate only the user's stores (and say so) | a planner reading another region's forecasts, including by asking the agent to "ignore the restriction" | `tests/test_access.py::test_out_of_scope_store_is_not_found_and_not_listed`, `tests/test_access.py::test_store_free_questions_only_aggregate_the_users_stores`, `tests/test_access.py::test_empty_scope_sees_nothing`, `tests/test_access.py::test_planner_cannot_get_evidence_for_another_store` |
+| C-20 | **Per-user rate limit** on questions (token bucket; 429 with Retry-After) | cost abuse; one user starving others | `tests/test_access.py::test_rate_limit_allows_a_burst_then_waits`, `tests/test_access.py::test_ask_is_rate_limited_per_user` |
+| C-21 | **Secrets from mounted files** (`NAME_FILE`) ahead of environment variables; error messages name the variable, never the value | key exposure via environment dumps or logs | `tests/test_access.py::test_secret_prefers_a_mounted_file_and_never_echoes_values` |
+| C-22 | **LLM failures contained**: per-call timeout; a failure returns a plain 503 without internals, is logged with its type, and an error-rate alert fires | hung requests; leaking stack traces; silent outages | `tests/test_access.py::test_llm_failure_is_a_clean_503_and_is_logged`, `tests/test_access.py::test_error_rate_alerts` |
+| C-23 | **Concurrent requests without a shared lock**: each request gets its own cursor on the same locked-down database | one slow question blocking everyone; lock-down lost on new cursors | `tests/test_extract_store.py::test_locked_down_connection_blocks_escapes` (connection and cursor), `tests/test_access.py::test_concurrent_requests_each_get_their_own_cursor` |
+| C-24 | **Container image**: non-root user, sign-in on by default, no secrets or local data in the build context, key and users file mounted at run time | secrets baked into images; running as root; an open-by-default deployment | `tests/test_security_controls.py::test_container_runs_non_root_with_sign_in_and_no_secrets` |
 
 ---
 
@@ -57,15 +64,15 @@
 | Risk | Status | Controls |
 |---|---|---|
 | LLM01 Prompt injection | Mitigated (direct); residual risk noted for indirect | C-02, C-03, C-04, C-08; evidence is structured data and code-generated notes |
-| LLM02 Sensitive information disclosure | Partially mitigated | C-01, C-09, C-14, C-15; **gap G-04** (provider data terms) |
+| LLM02 Sensitive information disclosure | Partially mitigated | C-01, C-09, C-14, C-15, C-18, C-19, C-21; **gap G-04** (provider data terms) |
 | LLM03 Supply chain | Partially mitigated | dependencies locked in `uv.lock`; **gap G-06** (no vulnerability scanning) |
 | LLM04 Data and model poisoning | Mitigated for the pipeline→agent boundary | C-11, C-12; outlier/duplicate detection in data preparation |
 | LLM05 Improper output handling | Mitigated | C-05, C-06; answers are plain text; the UI renders them as text, never as HTML |
-| LLM06 Excessive agency | Mitigated | C-04 (no LLM tool choice), C-01 (read-only), C-07 (no decisions) |
+| LLM06 Excessive agency | Mitigated | C-04 (no LLM tool choice), C-01 (read-only), C-07 (no decisions), C-19 (tools can only reach the user's stores) |
 | LLM07 System prompt leakage | Mitigated; low impact | C-08; prompts contain no secrets |
 | LLM08 Vector and embedding weaknesses | Not applicable | no retrieval over embeddings |
 | LLM09 Misinformation | Mitigated | C-05, C-06, C-10, C-17 |
-| LLM10 Unbounded consumption | Partially mitigated | C-13; at most 3 LLM calls per question; **gap G-02** (no rate limiting) |
+| LLM10 Unbounded consumption | Mitigated in-app; platform limits pending | C-13, C-20, C-22; at most 3 LLM calls per question; **gap G-02** (limits are per instance) |
 
 ### 3.2 NIST AI Risk Management Framework
 | Function | What exists |
@@ -73,7 +80,7 @@
 | **Govern** | Decision records (`docs/decisions.md`), evolution log, this document; controls tied to tests |
 | **Map** | Trust boundaries and actors (§1); intended use: explaining forecasts to planners, explicitly not making staffing decisions (C-07) |
 | **Measure** | Walk-forward accuracy vs a baseline by lead time; golden evals with deterministic checks + judge; faithfulness first-pass rate; detector recall against an answer key |
-| **Manage** | Alerts (C-16), regression baseline (C-17), guarded/templated fallbacks (C-05) |
+| **Manage** | Alerts (C-16, C-22), regression baseline (C-17), guarded/templated fallbacks (C-05), access control (C-18–C-20) |
 
 ### 3.3 ISO/IEC 42001 (AI management system), by theme
 | Theme | Evidence |
@@ -82,6 +89,7 @@
 | Data quality and provenance | Extract contract (C-11), as-of construction (C-12), quality report and caveats exposed to users |
 | Transparency to users | Answers disclose interpretations, caveats, attribution framing and accuracy by lead time (C-10) |
 | Human oversight | Decisions stay with planners (C-07); clarifying questions instead of guesses |
+| Access control and accountability | Sign-in and roles (C-18), least-privilege data scoping (C-19), per-user interaction log for audit (C-14) |
 | Monitoring and continual improvement | C-16, C-17, evolution log |
 
 ### 3.4 EU AI Act, risk classification (assessment, not legal advice)
@@ -91,15 +99,16 @@
 
 ---
 
-## 4. Known gaps (with where they get addressed)
+## 4. Known gaps
 
-| ID | Gap | Impact | Plan |
+| ID | Gap | Status | Plan |
 |---|---|---|---|
-| G-01 | **No authentication** on the API | anyone who can reach it can query forecasts | Deployment step: auth in front of the API, identity from the platform |
-| G-02 | **No rate limiting**; one question at a time under a lock | cost and availability abuse | Deployment step: gateway rate limits; per-user quotas |
-| G-03 | **No per-user data scoping** | every user sees every store | Deployment step: user → allowed stores, enforced inside the evidence tools |
-| G-04 | **Free-tier LLM provider terms**: unpaid API tiers may use submitted content to improve services | business data leaving under unsuitable terms | Development uses synthetic data only; a real deployment uses a paid tier or managed platform with no-training terms. Check the provider's current terms |
-| G-05 | **Indirect prompt injection** via data fields (e.g. a store name crafted as an instruction) | untrusted text inside evidence | Evidence is mostly numeric with code-generated notes; add sanitisation of text fields at the extract boundary before using real data |
-| G-06 | **No dependency vulnerability scanning or SBOM** | known-vulnerable packages | Add `pip-audit` (or equivalent) and an SBOM to CI |
-| G-07 | **Judge is the same model family as the agent** | lenient quality scores | Deterministic checks carry the security-relevant assertions; consider a different judge model |
-| G-08 | **Latency 12–15 s** per explained answer | users retrying, compounding load | Managed platform + streaming; cache provenance/caveat lookups |
+| G-01 | Authentication | **Partly closed** (C-18): in-app tokens or proxy identity. Tokens don't expire, and revoking one means editing the users file and restarting | Deployment: the platform's identity proxy (SSO) in front, `WFX_AUTH=header`; TLS terminated by the platform |
+| G-02 | Rate limiting | **Partly closed** (C-20): per user, per instance | Deployment: gateway limits across instances; a monthly spend cap on the LLM project |
+| G-03 | Per-user data scoping | **Closed** (C-19) | Map users to stores from the identity provider's groups instead of a file |
+| G-04 | **Free-tier LLM provider terms**: unpaid API tiers may use submitted content to improve services | Open | Development uses synthetic data only; a real deployment uses a paid tier or managed platform with no-training terms. Check the provider's current terms |
+| G-05 | **Indirect prompt injection** via data fields (e.g. a store name crafted as an instruction) | Open | Evidence is mostly numeric with code-generated notes; sanitise text fields at the extract boundary before using real data |
+| G-06 | **No dependency vulnerability scanning or SBOM** | Open | Add `pip-audit` (or equivalent) and an SBOM to CI; scan the image |
+| G-07 | **Judge is the same model family as the agent** | Open | Deterministic checks carry the security-relevant assertions; consider a different judge model |
+| G-08 | **Latency** 4–24 s per explained answer | **Diagnosed**: two LLM calls; graph build ~10 ms; the model reports no thinking tokens; the spread is provider-side queueing on the free tier. A timeout now bounds it (C-22) | Deployment: paid or provisioned endpoint. Answers can't be streamed because the gate checks the whole answer before anyone sees it; show progress instead |
+| G-09 | Interaction log is a local file (ephemeral in a container) | Open | Deployment: write to stdout or the platform's log service, with retention set |

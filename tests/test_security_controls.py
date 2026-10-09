@@ -54,3 +54,13 @@ def test_env_file_is_ignored():
     result = subprocess.run(["git", "check-ignore", "-q", ".env"], cwd=ROOT)
     assert result.returncode == 0, ".env must be gitignored"
     assert ".env" not in {p.name for p in _tracked_files()}
+
+
+def test_container_runs_non_root_with_sign_in_and_no_secrets():
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    runtime = dockerfile.split("AS runtime", 1)[1]
+    assert re.search(r"^USER (?!root|0\b)\S+", runtime, flags=re.MULTILINE), "runtime stage must switch to a non-root user"
+    assert "WFX_AUTH=token" in runtime, "sign-in must be on by default in the image"
+    assert not re.search(r"(?i)(GOOGLE_API_KEY|token_sha256|password)\s*=", dockerfile), "no secrets set in the image"
+    ignored = (ROOT / ".dockerignore").read_text().split()
+    assert {".env", "/data", "users*.yaml", ".git"} <= set(ignored)

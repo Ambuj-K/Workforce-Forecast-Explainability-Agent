@@ -12,6 +12,10 @@ a ``ToolResult`` with the same shape:
 
 Names typed by a user ("store 2", "pallets", "Grocery") are resolved before querying;
 uncertain matches are reported, never silently guessed.
+
+Store scoping: given ``allowed_stores``, the tools behave as if other stores don't exist.
+Store names resolve only within the scope, and tools that aggregate across stores filter to it.
+Scoping lives here, not in the prompt, so no question can talk its way around it.
 """
 
 from __future__ import annotations
@@ -54,9 +58,12 @@ def json_default(value: object) -> object:
 class EvidenceTools:
     """Read-only evidence tools over a ``connect_readonly`` connection."""
 
-    def __init__(self, con: duckdb.DuckDBPyConnection) -> None:
+    def __init__(self, con: duckdb.DuckDBPyConnection, allowed_stores: frozenset[str] | None = None) -> None:
+        """``allowed_stores=None`` means every store; an empty set means none."""
         self._con = con
-        self._stores = self._column("SELECT DISTINCT store_id FROM forecasts ORDER BY 1")
+        stores = self._column("SELECT DISTINCT store_id FROM forecasts ORDER BY 1")
+        self._stores = stores if allowed_stores is None else [s for s in stores if s in allowed_stores]
+        self._scoped = allowed_stores is not None
         self._departments = self._column("SELECT DISTINCT department FROM labour_standards ORDER BY 1")
         self._drivers = self._column("SELECT DISTINCT driver FROM labour_standards ORDER BY 1")
 
@@ -301,7 +308,7 @@ class EvidenceTools:
         if error:
             return error
         notes: list[str] = []
-        filters, params = ["window_end < ?"], [run["origin"]]
+        filters, params = ["window_end < ?", "list_contains(?::VARCHAR[], store_id)"], [run["origin"], self._stores]
         if store is not None:
             store_id, n, error = self._resolve("store", store, self._stores)
             if error:
@@ -332,6 +339,8 @@ class EvidenceTools:
         if worse:
             notes.append(f"The model was less accurate than the simple same-weekday method at lead week(s) {', '.join(map(str, worse))}.")
         notes.append(f"Scored windows all ended before {pd.Timestamp(run['origin']).date()}.")
+        if self._scoped and store is None:
+            notes.append(f"This covers only the stores you have access to: {', '.join(self._stores)}.")
         return ToolResult("ok", data=rows, notes=notes, source=["accuracy"])
 
     def get_caveats(self, store: str | None = None, run_id: str | None = None) -> ToolResult:
@@ -340,12 +349,12 @@ class EvidenceTools:
         if error:
             return error
         notes: list[str] = []
-        store_filter, params = "", [run["run_id"]]
+        store_filter, params = " AND list_contains(?::VARCHAR[], store_id)", [run["run_id"], self._stores]
         if store is not None:
             store_id, n, error = self._resolve("store", store, self._stores)
             if error:
                 return error
-            store_filter, params = " AND store_id = ?", [run["run_id"], store_id]
+            store_filter, params = " AND store_id = ?", [run["run_id"], store_id]  # store_id is already in scope
             notes += n
         flags = self._rows(
             "SELECT store_id, driver, latest_actual_date, data_is_stale, is_ramping, days_since_open, closes_in_horizon, close_date, "
@@ -372,6 +381,8 @@ class EvidenceTools:
                 notes.append(f"{where}: store closes on {pd.Timestamp(f['close_date']).date()}, inside this forecast window.")
         if not flags:
             notes.append("No data-quality or store-status caveats for this selection as of the run.")
+        if self._scoped and store is None:
+            notes.append(f"This covers only the stores you have access to: {', '.join(self._stores) or 'none'}.")
         return ToolResult("ok", data=flags, notes=notes, source=["eligibility"])
 
     def compare_runs(self, store: str, department: str, week_start: str | date, earlier_run_id: str | None = None, later_run_id: str | None = None) -> ToolResult:

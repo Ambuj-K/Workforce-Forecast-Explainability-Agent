@@ -19,3 +19,7 @@ eval_results*.json
 
 # Back-test outputs
 /reports/
+
+# Deployment config holding real token hashes / keys
+/users.yaml
+*.key

@@ -207,3 +207,16 @@ Nine real questions, every route exercised; every written explanation passed the
 **Built:** `tests/test_security_controls.py`: every `tests/…::test_…` and `goldens.yaml#…` cited in the doc must exist; tracked files are scanned for key-shaped secrets; `.env` must be ignored and untracked.
 **Found while writing it:** the doc claimed the UI tells users they're talking to an AI assistant; it didn't. The UI now says so and that staffing decisions stay with the user. The first golden-citation regex also matched unrelated code terms (`pip-audit`), so citations use an explicit `goldens.yaml#id` form.
 **Lesson:** Writing the control table against real test names surfaces claims the system doesn't actually meet; the meta-test keeps it that way.
+
+## Phase 10 — Deployment-ready, platform-agnostic (2026-10-09)
+
+### Iteration 10.1 — Sign-in, roles and store scoping
+**Built:** `api/auth.py` (users file with token hashes, roles, stores; token or identity-proxy header modes; constant-time comparison; no-sign-in refused off loopback), `EvidenceTools(allowed_stores=…)`, admin-only monitoring, per-user rate limits, `scripts/make_token.py`, `deploy/users.example.yaml`. The UI takes an optional access token (kept for the browser session only).
+**Found:** FastAPI ignored `Annotated[..., Depends(local_fn)]` under `from __future__ import annotations` (string annotations are resolved at module level, where the local function doesn't exist) → plain `Depends` defaults. Live: a planner scoped to S001 asking about another store got "not found, available: S001"; asking "anything to be careful about?" got "no caveats", true for their store but readable as global → the tool now says which stores it covered.
+
+### Iteration 10.2 — Secrets, failures, concurrency, container
+**Built:** `wfx/secrets.py` (`NAME_FILE` first), LLM timeout, 503 + `error` outcome + error-rate alert, a cursor per request instead of the global lock (lock-down tests now also run through a cursor), `Dockerfile` (deps → data → runtime; non-root; sign-in on by default) and `.dockerignore`. Smoke-tested the same config path outside Docker: health 200, anonymous 401, planner monitoring 403, admin 200, `none` refused on 0.0.0.0. The image build itself wasn't run here (no container daemon running).
+
+### Iteration 10.3 — Latency, measured before tuning
+**Measured:** graph build ~10 ms; planner call 1.9–11.2 s for a 1.3k-character prompt; explainer 1.8–12.3 s. The model reports **0 thinking tokens** at its default, and identical calls vary 5×. **Conclusion:** provider-side queueing on the free tier, not our code. Thinking level made configurable (no default change → no eval re-run). The answer can't stream (the gate checks the whole answer first), so the deployment fix is a paid/provisioned endpoint plus visible progress.
+**Lesson:** Measure the split before optimising; the obvious suspect (model thinking) was innocent.

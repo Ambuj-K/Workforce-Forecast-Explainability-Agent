@@ -26,6 +26,8 @@
   #answer { white-space:pre-wrap; margin-top:12px; } details { margin-top:10px; color:var(--muted); font-size:13px; }
   table { border-collapse:collapse; width:100%; font-size:13px; } td, th { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); }
   h2 { font-size:15px; margin:0 0 8px; } ul { margin:6px 0; padding-left:18px; }
+  .token { display:flex; gap:8px; align-items:center; font-size:13px; color:var(--muted); margin-bottom:12px; }
+  .token input { flex:1; min-width:0; font:inherit; color:inherit; background:transparent; border:1px solid var(--line); border-radius:6px; padding:4px 8px; }
 </style>
 </head>
 <body>
@@ -34,6 +36,7 @@
   <p class="sub">Ask why a store needs its hours, how accurate forecasts have been, or what changed since the last run. Answers are written by an AI assistant; every number in them is checked against the forecast data. Staffing decisions stay with you.</p>
 
   <section class="card">
+    <label class="token">Access token <input id="token" type="password" autocomplete="off" placeholder="only if your administrator gave you one"></label>
     <textarea id="q" placeholder="e.g. Why does store 1 grocery need these hours next week?"></textarea>
     <div class="row">
       <button id="ask">Ask</button>
@@ -59,6 +62,11 @@ const EXAMPLES = [
   "What changed for store 1 grocery for the week of 5 January since last week's run?",
 ];
 const el = (tag, text, cls) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n; };
+const tokenInput = document.getElementById("token");
+try { tokenInput.value = sessionStorage.getItem("wfx-token") || ""; } catch {}
+tokenInput.addEventListener("change", () => { try { sessionStorage.setItem("wfx-token", tokenInput.value.trim()); } catch {} loadMonitoring(); });
+const authHeaders = () => tokenInput.value.trim() ? { Authorization: "Bearer " + tokenInput.value.trim() } : {};
+const STATUS_TEXT = { 401: "Please enter a valid access token.", 403: "You don't have access to this.", 429: "Too many questions; please wait a moment." };
 const pct = v => v == null ? "–" : (100 * v).toFixed(1) + "%";
 
 for (const ex of EXAMPLES) {
@@ -74,8 +82,8 @@ async function ask() {
   document.getElementById("answer").textContent = "Thinking…";
   document.getElementById("meta").textContent = "";
   try {
-    const res = await fetch("/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q }) });
-    if (!res.ok) throw new Error((await res.json()).detail?.[0]?.msg || res.statusText);
+    const res = await fetch("/ask", { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ question: q }) });
+    if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(STATUS_TEXT[res.status] || body.detail?.[0]?.msg || res.statusText); }
     const data = await res.json();
     document.getElementById("answer").textContent = data.answer;
     const meta = document.getElementById("meta"); meta.textContent = "";
@@ -85,15 +93,21 @@ async function ask() {
     document.getElementById("evidence-box").hidden = data.evidence.length === 0;
     loadMonitoring();
   } catch (err) {
-    document.getElementById("answer").textContent = "Something went wrong: " + err.message;
+    document.getElementById("answer").textContent = err.message;
   } finally { button.disabled = false; }
 }
 document.getElementById("ask").onclick = ask;
 document.getElementById("q").addEventListener("keydown", e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) ask(); });
 
 async function loadMonitoring() {
-  const data = await (await fetch("/monitoring")).json();
   const alerts = document.getElementById("alerts"); alerts.textContent = "";
+  const res = await fetch("/monitoring", { headers: authHeaders() });
+  if (!res.ok) {
+    document.getElementById("trend").textContent = ""; document.getElementById("agent").textContent = "";
+    alerts.append(el("li", res.status === 403 ? "Monitoring is available to admins." : (STATUS_TEXT[res.status] || res.statusText)));
+    return;
+  }
+  const data = await res.json();
   if (!data.alerts.length) alerts.append(el("li", "No alerts."));
   for (const a of data.alerts) { const li = el("li"); li.append(el("span", a.severity, "badge " + a.severity), el("span", "  " + a.message)); alerts.append(li); }
   const table = document.getElementById("trend"); table.textContent = "";

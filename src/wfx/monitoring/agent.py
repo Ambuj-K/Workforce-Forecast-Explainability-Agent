@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,6 +30,7 @@ def mask(text: str) -> str:
 @dataclass(frozen=True)
 class Interaction:
     timestamp: str
+    user_id: str
     question: str
     outcome: str
     question_type: str | None
@@ -37,11 +39,13 @@ class Interaction:
     tools: list[str]
     latency_ms: int
     answer_chars: int
+    error: str | None = None  # exception type only, when the agent failed (e.g. LLM timeout)
 
     @classmethod
-    def from_answer(cls, question: str, answer: AgentAnswer, latency_ms: int) -> Interaction:
+    def from_answer(cls, question: str, answer: AgentAnswer, latency_ms: int, user_id: str = "local", error: str | None = None) -> Interaction:
         return cls(
             timestamp=datetime.now(UTC).isoformat(timespec="seconds"),
+            user_id=user_id,
             question=mask(question),
             outcome=answer.outcome,
             question_type=answer.plan.question_type.value if answer.plan else None,
@@ -50,18 +54,20 @@ class Interaction:
             tools=[e["tool"] for e in answer.evidence],
             latency_ms=latency_ms,
             answer_chars=len(answer.answer),
+            error=error,
         )
 
 
 class InteractionLog:
-    """Append-only JSON-lines log."""
+    """Append-only JSON-lines log, safe for concurrent requests in one process."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
+        self._lock = threading.Lock()
 
     def append(self, interaction: Interaction) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a") as handle:
+        with self._lock, self.path.open("a") as handle:
             handle.write(json.dumps(asdict(interaction)) + "\n")
 
     def read(self, last: int | None = None) -> list[dict[str, Any]]:
@@ -77,6 +83,7 @@ class AgentRules:
     min_first_pass_rate: float = 0.9  # of explained answers
     max_fallback_rate: float = 0.05  # of explained answers
     max_latency_p95_ms: int = 15_000
+    max_error_rate: float = 0.05  # of all questions: the agent failed (LLM timeout/outage)
     min_sample: int = 10  # don't alert on tiny samples
 
 
@@ -90,6 +97,7 @@ class AgentHealth:
     latency_p50_ms: float | None
     latency_p95_ms: float | None
     top_rejected_values: list[tuple[str, int]] = field(default_factory=list)
+    error_rate: float | None = None
 
 
 def _percentile(values: list[int], q: float) -> float | None:
@@ -118,14 +126,20 @@ def agent_health(records: list[dict[str, Any]]) -> AgentHealth:
         latency_p50_ms=_percentile(latencies, 0.5),
         latency_p95_ms=_percentile(latencies, 0.95),
         top_rejected_values=sorted(rejected.items(), key=lambda kv: -kv[1])[:5],
+        error_rate=by_outcome.get("error", 0) / len(records) if records else None,
     )
 
 
 def agent_alerts(health: AgentHealth, rules: AgentRules | None = None) -> list[Alert]:
     rules = rules or AgentRules()
-    if health.explained < rules.min_sample:
-        return []
     alerts = []
+    if health.interactions >= rules.min_sample and health.error_rate and health.error_rate > rules.max_error_rate:
+        alerts.append(Alert(
+            "agent_errors_high", "critical",
+            f"{health.error_rate:.0%} of questions failed (limit {rules.max_error_rate:.0%}); check the LLM provider and timeouts.",
+        ))
+    if health.explained < rules.min_sample:
+        return alerts
     if health.first_pass_rate is not None and health.first_pass_rate < rules.min_first_pass_rate:
         alerts.append(Alert(
             "gate_first_pass_low", "warning",

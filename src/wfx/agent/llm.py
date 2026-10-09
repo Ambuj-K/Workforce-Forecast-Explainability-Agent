@@ -1,6 +1,6 @@
 """LLM access behind a small interface, so the provider can change without touching the agent.
 
-* ``GeminiLLM``: Google Gemini via the ``google-genai`` SDK (key from ``GOOGLE_API_KEY``).
+* ``GeminiLLM``: Google Gemini via the ``google-genai`` SDK (key from ``GOOGLE_API_KEY`` or a mounted ``GOOGLE_API_KEY_FILE``).
 * ``ScriptedLLM``: replays prepared responses, for deterministic tests.
 """
 
@@ -12,6 +12,8 @@ from collections.abc import Callable
 from typing import Protocol, TypeVar
 
 from pydantic import BaseModel
+
+from wfx.secrets import secret
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -27,15 +29,20 @@ class LLM(Protocol):
 class GeminiLLM:
     """Gemini with temperature 0, JSON-schema output for structured calls, and retry on rate limits."""
 
-    def __init__(self, model: str | None = None, api_key: str | None = None, max_retries: int = 4) -> None:
+    def __init__(self, model: str | None = None, api_key: str | None = None, max_retries: int = 4, thinking: str | None = None, timeout_s: float | None = None) -> None:
+        """``thinking``: MINIMAL | LOW | MEDIUM | HIGH, or None for the model's default (env ``WFX_LLM_THINKING``).
+        ``timeout_s``: per-call limit (env ``WFX_LLM_TIMEOUT_S``, default 30) so a stuck call can't hold a request."""
         from google import genai  # imported lazily so tests never need the SDK configured
 
-        key = api_key or os.environ.get("GOOGLE_API_KEY")
-        if not key:
-            raise RuntimeError("GOOGLE_API_KEY is not set (put it in .env, never in code)")
-        self._client = genai.Client(api_key=key)
+        key = api_key or secret("GOOGLE_API_KEY")
+        from google.genai import types
+
+        timeout = timeout_s or float(os.environ.get("WFX_LLM_TIMEOUT_S", "30"))
+        self._client = genai.Client(api_key=key, http_options=types.HttpOptions(timeout=int(timeout * 1000)))
         self._model = model or os.environ.get("WFX_LLM_MODEL", DEFAULT_MODEL)
         self._max_retries = max_retries
+        self._thinking = (thinking or os.environ.get("WFX_LLM_THINKING") or "").upper() or None
+        self.last_usage: object | None = None  # token counts of the latest call, for latency analysis
 
     def _call(self, fn: Callable[[], object]) -> object:
         from google.genai import errors
@@ -60,8 +67,10 @@ class GeminiLLM:
             response_mime_type="application/json",
             response_schema=schema,
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            thinking_config=types.ThinkingConfig(thinking_level=self._thinking) if self._thinking else None,
         )
         response = self._call(lambda: self._client.models.generate_content(model=self._model, contents=user, config=config))
+        self.last_usage = response.usage_metadata
         return schema.model_validate_json(response.text)
 
     def text(self, system: str, user: str) -> str:
@@ -71,8 +80,10 @@ class GeminiLLM:
             system_instruction=system,
             temperature=0,
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            thinking_config=types.ThinkingConfig(thinking_level=self._thinking) if self._thinking else None,
         )
         response = self._call(lambda: self._client.models.generate_content(model=self._model, contents=user, config=config))
+        self.last_usage = response.usage_metadata
         return response.text or ""
 
 

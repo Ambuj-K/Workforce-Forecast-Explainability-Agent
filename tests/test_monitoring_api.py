@@ -1,7 +1,5 @@
 """Tests for monitoring rules, the interaction log, and the HTTP API (scripted LLM, no network)."""
 
-from datetime import date
-
 import duckdb
 import pandas as pd
 import pytest
@@ -10,11 +8,7 @@ from fastapi.testclient import TestClient
 from wfx.agent.llm import ScriptedLLM
 from wfx.agent.schema import QuestionPlan, QuestionType
 from wfx.api.app import create_app
-from wfx.data.config import GeneratorConfig
-from wfx.data.synthetic import generate
-from wfx.explain.extract import build_extract
-from wfx.explain.store import build_database
-from wfx.forecasting.model import ModelParams
+from wfx.api.auth import Authenticator
 from wfx.monitoring.agent import AgentRules, InteractionLog, agent_alerts, agent_health, mask
 from wfx.monitoring.forecast import forecast_alerts
 
@@ -85,16 +79,14 @@ def test_questions_are_masked_before_logging():
 # ------------------------------------------------------------------------ API
 
 
-@pytest.fixture(scope="module")
-def db(tmp_path_factory):
-    ds = generate(GeneratorConfig(start=date(2023, 1, 2), end=date(2024, 12, 29), n_stores=4, seed=5))
-    extract = build_extract(ds, recent_runs=2, scored_runs=3, params=ModelParams(max_iter=60))
-    return build_database(extract, tmp_path_factory.mktemp("api") / "agent.duckdb")
+@pytest.fixture
+def db(api_db):
+    return api_db
 
 
 def client(db, tmp_path, llm) -> tuple[TestClient, InteractionLog]:
     log_path = tmp_path / "interactions.jsonl"
-    return TestClient(create_app(db, llm, log_path)), InteractionLog(log_path)
+    return TestClient(create_app(db, llm, log_path, auth=Authenticator("none"))), InteractionLog(log_path)
 
 
 def test_health_ui_and_runs(db, tmp_path):

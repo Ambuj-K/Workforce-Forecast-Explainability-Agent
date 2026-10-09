@@ -127,12 +127,14 @@ def test_agent_can_query_every_table(db, extract):
         "INSTALL httpfs",
     ],
 )
-def test_locked_down_connection_blocks_escapes(db, tmp_path, attack):
+@pytest.mark.parametrize("via", ["connection", "cursor"])  # the API gives each request its own cursor
+def test_locked_down_connection_blocks_escapes(db, tmp_path, attack, via):
     secret = tmp_path / "secret.env"
     secret.write_text("API_KEY,leaked\n")
     sql = attack.format(secret=secret, out=tmp_path / "exfil.csv", other=tmp_path / "other.duckdb")
     con = connect_readonly(db)
+    target = con.cursor() if via == "cursor" else con
     with pytest.raises(duckdb.Error):
-        con.execute(sql).fetchall()
+        target.execute(sql).fetchall()
     con.close()
     assert not (tmp_path / "exfil.csv").exists()

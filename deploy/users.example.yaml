@@ -1,0 +1,16 @@
+# Who may use the explainer, which stores they see, and their role.
+# Contains token *hashes* only; create a token + hash with: uv run python scripts/make_token.py
+# Mount the real file at run time (WFX_USERS_FILE); don't commit it (users*.yaml is ignored by the image build).
+users:
+  - id: planner-north
+    role: planner            # ask questions, list runs
+    stores: [S001, S002, S003]
+    token_sha256: replace-with-hash-from-make_token
+  - id: planner-south
+    role: planner
+    stores: [S004, S005]
+    token_sha256: replace-with-hash-from-make_token
+  - id: forecast-admin
+    role: admin              # also monitoring (aggregates across all stores)
+    stores: "*"
+    token_sha256: replace-with-hash-from-make_token
